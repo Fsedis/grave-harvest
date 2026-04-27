@@ -17,6 +17,7 @@
 - Victory screen и boss HP bar.
 - Damage-radius rings для Holy Candle и Grave Bell совпадают с реальным радиусом урона.
 - Damage numbers с лимитом, low HP warning и level-up flash.
+- Settings screen с сохранёнными переключателями тряски экрана и чисел урона.
 - Видимый UI переведён на русский.
 - Crow Swarm преследует цель и ретаргетится, если цель умерла.
 - Особые weapon-upgrades работают как боевые эффекты: второй удар колокола, ожог свечи и кровотечение ворон.
@@ -30,7 +31,7 @@
 - Чистая доменная логика с тестами.
 
 Ограничения версии:
-- Нет настроек, звуков и финального juice.
+- Нет звуков и финального juice.
 - Визуал намеренно серый и прототипный.
 
 ## Принципы разработки
@@ -129,13 +130,13 @@ Definition of Done:
 - [x] Добавить damage numbers с лимитом, без настройки on/off.
 - [x] Добавить low HP warning.
 - [x] Добавить level-up flash.
-- [ ] Добавить screen shake с настройкой on/off.
-- [ ] Добавить damage numbers с настройкой on/off.
+- [x] Добавить screen shake с настройкой on/off.
+- [x] Добавить damage numbers с настройкой on/off.
 - [ ] Добавить level-up sting.
 - [ ] Добавить SFX для shot, hit, death, pickup, level-up, player hit.
 - [ ] Добавить простую ambient/music loop.
 - [ ] Улучшить pause screen.
-- [ ] Добавить settings screen.
+- [x] Добавить settings screen.
 - [ ] Улучшить визуальную читаемость арены.
 - [ ] Добавить короткие first-run hints.
 
@@ -163,14 +164,14 @@ Definition of Done:
 
 ## Ближайший фокус
 
-Следующий рабочий срез: Juice And UX.
+Следующий рабочий срез: SFX + Music Pass.
 
 Порядок задач:
-1. Добавить settings screen.
-2. Подключить screen shake и damage numbers к настройкам.
-3. Добавить SFX для shot, hit, death, pickup, level-up, player hit.
-4. Добавить простую ambient/music loop.
-5. Улучшить pause screen и first-run hints.
+1. Добавить SFX для shot, hit, death, pickup, level-up, player hit.
+2. Добавить простую ambient/music loop.
+3. Добавить volume-настройки поверх готового settings screen.
+4. Улучшить pause screen и first-run hints.
+5. Пройти первый балансный full-run после звукового feedback.
 
 ## После MVP
 

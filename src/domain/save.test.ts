@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   SAVE_KEY,
+  createDefaultSettings,
   createDefaultSaveData,
   loadSave,
   persistSave,
   resetSave,
+  updateSettings,
   type SaveData,
   type StorageLike
 } from "./save";
@@ -19,6 +21,56 @@ describe("save system", () => {
     storage.setItem(SAVE_KEY, "{not-json");
 
     expect(loadSave(storage)).toEqual(createDefaultSaveData());
+  });
+
+  it("includes enabled feedback settings in default save data", () => {
+    expect(createDefaultSaveData().settings).toEqual({
+      screenShake: true,
+      damageNumbers: true
+    });
+  });
+
+  it("loads old saves without settings using default settings", () => {
+    const storage = createMemoryStorage();
+    storage.setItem(
+      SAVE_KEY,
+      JSON.stringify({
+        version: 1,
+        bones: 75,
+        meta: {
+          meta_hp: 1,
+          meta_damage: 2,
+          meta_pickup: 0,
+          meta_rare: 0,
+          meta_retention: 1
+        },
+        stats: {
+          totalRuns: 3,
+          wins: 1,
+          bestTime: 420,
+          totalKills: 180,
+          totalBonesEarned: 75
+        }
+      })
+    );
+
+    expect(loadSave(storage).settings).toEqual(createDefaultSettings());
+  });
+
+  it("normalizes corrupt settings to defaults", () => {
+    const storage = createMemoryStorage();
+    storage.setItem(
+      SAVE_KEY,
+      JSON.stringify({
+        ...createDefaultSaveData(),
+        settings: {
+          screenShake: "no",
+          damageNumbers: null
+        }
+      })
+    );
+
+    expect(loadSave(storage).settings).toEqual(createDefaultSettings());
   });
 
   it("persists and loads save data roundtrip", () => {
@@ -54,6 +106,21 @@ describe("save system", () => {
     resetSave(storage);
 
     expect(storage.getItem(SAVE_KEY)).toBeNull();
+  });
+
+  it("updates settings without mutating the source save", () => {
+    const save = createDefaultSaveData();
+    const updated = updateSettings(save, { damageNumbers: false });
+
+    expect(updated).toEqual({
+      ...save,
+      settings: {
+        screenShake: true,
+        damageNumbers: false
+      }
+    });
+    expect(save.settings).toEqual(createDefaultSettings());
+    expect(updated).not.toBe(save);
   });
 });
 

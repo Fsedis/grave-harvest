@@ -4,6 +4,7 @@ import {
   getDamageRadiusRingVisual,
   getDecorativeRingVisual,
   isLowHp,
+  shouldApplyScreenShake,
   shouldShowDamageNumber
 } from "./effects";
 
@@ -40,6 +41,18 @@ describe("isLowHp", () => {
 });
 
 describe("shouldShowDamageNumber", () => {
+  it("hides every damage number when the setting is disabled", () => {
+    expect(
+      shouldShowDamageNumber({
+        activeCount: 0,
+        activeEnemies: 1,
+        important: true,
+        roll: 0,
+        enabled: false
+      })
+    ).toBe(false);
+  });
+
   it("always shows important hits even past the normal cap", () => {
     expect(
       shouldShowDamageNumber({
@@ -79,6 +92,13 @@ describe("shouldShowDamageNumber", () => {
         roll: 0.25
       })
     ).toBe(false);
+  });
+});
+
+describe("shouldApplyScreenShake", () => {
+  it("follows the screen shake setting", () => {
+    expect(shouldApplyScreenShake({ screenShake: true })).toBe(true);
+    expect(shouldApplyScreenShake({ screenShake: false })).toBe(false);
   });
 });
 

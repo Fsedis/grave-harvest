@@ -15,11 +15,16 @@ export type DamageNumberVisibilityInput = {
   activeEnemies: number;
   important: boolean;
   roll: number;
+  enabled?: boolean;
 };
 
 export type DamageNumberVisualInput = {
   amount: number;
   important: boolean;
+};
+
+export type ScreenShakeSettings = {
+  screenShake: boolean;
 };
 
 export type DamageNumberVisual = {
@@ -57,6 +62,10 @@ export function isLowHp(currentHp: number, maxHp: number): boolean {
 }
 
 export function shouldShowDamageNumber(input: DamageNumberVisibilityInput): boolean {
+  if (input.enabled === false) {
+    return false;
+  }
+
   if (input.important) {
     return true;
   }
@@ -70,6 +79,10 @@ export function shouldShowDamageNumber(input: DamageNumberVisibilityInput): bool
   }
 
   return true;
+}
+
+export function shouldApplyScreenShake(settings: ScreenShakeSettings): boolean {
+  return settings.screenShake;
 }
 
 export function getDamageNumberVisual(input: DamageNumberVisualInput): DamageNumberVisual {

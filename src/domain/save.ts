@@ -16,11 +16,17 @@ export type SaveStats = {
   totalBonesEarned: number;
 };
 
+export type SettingsData = {
+  screenShake: boolean;
+  damageNumbers: boolean;
+};
+
 export type SaveData = {
   version: 1;
   bones: number;
   meta: MetaUpgradeLevels;
   stats: SaveStats;
+  settings: SettingsData;
 };
 
 export type StorageLike = {
@@ -46,7 +52,15 @@ export function createDefaultSaveData(): SaveData {
       bestTime: 0,
       totalKills: 0,
       totalBonesEarned: 0
-    }
+    },
+    settings: createDefaultSettings()
+  };
+}
+
+export function createDefaultSettings(): SettingsData {
+  return {
+    screenShake: true,
+    damageNumbers: true
   };
 }
 
@@ -72,6 +86,29 @@ export function resetSave(storage: StorageLike): void {
   storage.removeItem(SAVE_KEY);
 }
 
+export function normalizeSettings(value: unknown): SettingsData {
+  const defaults = createDefaultSettings();
+
+  if (!isObject(value)) {
+    return defaults;
+  }
+
+  return {
+    screenShake: typeof value.screenShake === "boolean" ? value.screenShake : defaults.screenShake,
+    damageNumbers: typeof value.damageNumbers === "boolean" ? value.damageNumbers : defaults.damageNumbers
+  };
+}
+
+export function updateSettings(save: SaveData, patch: Partial<SettingsData>): SaveData {
+  return {
+    ...save,
+    settings: normalizeSettings({
+      ...save.settings,
+      ...patch
+    })
+  };
+}
+
 function normalizeSaveData(value: unknown): SaveData {
   const defaults = createDefaultSaveData();
 
@@ -95,7 +132,8 @@ function normalizeSaveData(value: unknown): SaveData {
       bestTime: readStat(value.stats, "bestTime"),
       totalKills: readStat(value.stats, "totalKills"),
       totalBonesEarned: readStat(value.stats, "totalBonesEarned")
-    }
+    },
+    settings: normalizeSettings(value.settings)
   };
 }
 

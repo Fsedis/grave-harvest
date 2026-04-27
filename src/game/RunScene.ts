@@ -5,6 +5,7 @@ import {
   getDamageRadiusRingVisual,
   getDecorativeRingVisual,
   isLowHp,
+  shouldApplyScreenShake,
   shouldShowDamageNumber,
   type RingVisual
 } from "../domain/effects";
@@ -39,7 +40,9 @@ import {
   loadSave,
   persistSave,
   resetSave,
+  updateSettings,
   type SaveData,
+  type SettingsData,
   type StorageLike
 } from "../domain/save";
 import {
@@ -76,7 +79,10 @@ type RunStatus =
   | "game_over"
   | "victory"
   | "meta_upgrades"
+  | "settings"
   | "reset_confirm";
+
+type SettingsReturnTarget = "menu" | "pause";
 
 type EnemySprite = Phaser.Physics.Arcade.Image & {
   runtimeId: number;
@@ -175,6 +181,7 @@ export class RunScene extends Phaser.Scene {
   private activeFinalBoss: EnemySprite | null = null;
   private saveData: SaveData = createDefaultSaveData();
   private runEndSummary: RunEndSummary | null = null;
+  private settingsReturnTarget: SettingsReturnTarget = "menu";
 
   constructor() {
     super("RunScene");
@@ -449,6 +456,8 @@ export class RunScene extends Phaser.Scene {
         this.pauseRun();
       } else if (this.status === "paused") {
         this.resumeRun();
+      } else if (this.status === "settings") {
+        this.closeSettingsOverlay();
       } else if (this.status === "meta_upgrades" || this.status === "reset_confirm") {
         this.showMainMenu();
       }
@@ -639,7 +648,7 @@ export class RunScene extends Phaser.Scene {
 
       this.createRingBurst(enemy.x, enemy.y, spawn.color, definition.radius * 2.2 * spawn.scaleMultiplier);
       this.showWorldText(enemy.x, enemy.y - definition.radius * 2.8, spawn.name, "#f1dfaa", 24);
-      this.cameras.main.shake(spawn.id === "bone_knight_captain" ? 260 : 160, 0.005);
+      this.shakeCamera(spawn.id === "bone_knight_captain" ? 260 : 160, 0.005);
     }
   }
 
@@ -771,7 +780,7 @@ export class RunScene extends Phaser.Scene {
     this.run.hp = Math.max(0, this.run.hp - amount);
     this.run.invulnerableUntil = this.run.timeElapsed + PLAYER_INVULNERABILITY_SECONDS;
     this.player.setTintFill(0xff5a54);
-    this.cameras.main.shake(120, 0.006);
+    this.shakeCamera(120, 0.006);
     this.createBurst(this.player.x, this.player.y, 0xff5a54, 5, 22, 150);
     this.time.delayedCall(90, () => {
       if (this.status === "playing") {
@@ -1026,7 +1035,7 @@ export class RunScene extends Phaser.Scene {
 
   private applyBellPulse(pulse: BellPulseSpec): void {
     this.createDamageRadiusRing(this.player.x, this.player.y, 0xcdbb8d, pulse.radius);
-    this.cameras.main.shake(pulse.index === 0 ? 80 : 110, pulse.index === 0 ? 0.003 : 0.004);
+    this.shakeCamera(pulse.index === 0 ? 80 : 110, pulse.index === 0 ? 0.003 : 0.004);
 
     for (const child of this.enemies.getChildren()) {
       const enemy = child as EnemySprite;
@@ -1233,7 +1242,8 @@ export class RunScene extends Phaser.Scene {
       activeCount: this.damageNumberTexts.length,
       activeEnemies: this.enemies.countActive(true),
       important,
-      roll: Math.random()
+      roll: Math.random(),
+      enabled: this.saveData.settings.damageNumbers
     });
 
     if (!shouldShow) {
@@ -1241,6 +1251,14 @@ export class RunScene extends Phaser.Scene {
     }
 
     this.showDamageNumber(enemy.x, enemy.y - enemy.def.radius - 8, amount, important, color);
+  }
+
+  private shakeCamera(durationMs: number, intensity: number): void {
+    if (!shouldApplyScreenShake(this.saveData.settings)) {
+      return;
+    }
+
+    this.cameras.main.shake(durationMs, intensity);
   }
 
   private showDamageNumber(x: number, y: number, amount: number, important: boolean, color?: number): void {
@@ -1671,20 +1689,24 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(subtitleWidth);
-    this.addOverlayButton(width / 2, height / 2 + 26, 220, 52, "Начать ночь", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 90, 270, 48, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
-    this.addOverlayButton(width / 2, height / 2 + 150, 210, 44, "Сбросить прогресс", () => this.showResetProgressConfirmOverlay());
-    this.addOverlayText(width / 2, height / 2 + 202, "Enter тоже запускает забег", 15, "#8f9687").setOrigin(0.5);
+    this.addOverlayButton(width / 2, height / 2 + 18, 220, 52, "Начать ночь", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 78, 230, 46, "Настройки", () => this.showSettingsOverlay("menu"));
+    this.addOverlayButton(width / 2, height / 2 + 134, 270, 46, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
+    this.addOverlayButton(width / 2, height / 2 + 190, 210, 42, "Сбросить прогресс", () => this.showResetProgressConfirmOverlay());
+    this.addOverlayText(width / 2, height / 2 + 238, "Enter тоже запускает забег", 15, "#8f9687").setOrigin(0.5);
   }
 
   private showPauseOverlay(): void {
+    this.status = "paused";
+    this.setHudVisible(true);
     this.clearOverlay();
     const { width, height } = this.scale;
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x0b0e0c, 0.58);
-    this.addOverlayText(width / 2, height / 2 - 96, "Пауза", 42, "#f4ead7", "700").setOrigin(0.5);
-    this.addOverlayButton(width / 2, height / 2 - 24, 190, 48, "Продолжить", () => this.resumeRun());
-    this.addOverlayButton(width / 2, height / 2 + 38, 190, 48, "Заново", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 100, 190, 48, "Главное меню", () => this.showMainMenu());
+    this.addOverlayText(width / 2, height / 2 - 124, "Пауза", 42, "#f4ead7", "700").setOrigin(0.5);
+    this.addOverlayButton(width / 2, height / 2 - 52, 190, 48, "Продолжить", () => this.resumeRun());
+    this.addOverlayButton(width / 2, height / 2 + 8, 190, 48, "Настройки", () => this.showSettingsOverlay("pause"));
+    this.addOverlayButton(width / 2, height / 2 + 68, 190, 48, "Заново", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 128, 190, 48, "Главное меню", () => this.showMainMenu());
   }
 
   private showLevelUpOverlay(): void {
@@ -1877,6 +1899,72 @@ export class RunScene extends Phaser.Scene {
     this.showMetaUpgradesOverlay();
   }
 
+  private showSettingsOverlay(returnTarget: SettingsReturnTarget = this.settingsReturnTarget): void {
+    this.settingsReturnTarget = returnTarget;
+    this.status = "settings";
+    this.physics.pause();
+    this.setHudVisible(false);
+    this.clearOverlay();
+
+    const { width, height } = this.scale;
+    const panelWidth = Math.min(width - 48, 620);
+    const titleY = height / 2 - 148;
+    const startY = height / 2 - 48;
+
+    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.8);
+    this.addOverlayText(width / 2, titleY, "Настройки", width < 520 ? 32 : 42, "#f4ead7", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 44);
+    this.addOverlayText(width / 2, titleY + 48, "Визуальный отклик", 18, "#e5d39f", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(panelWidth);
+
+    this.addSettingsToggle(
+      width / 2,
+      startY,
+      panelWidth,
+      "Тряска экрана",
+      this.saveData.settings.screenShake,
+      () => this.updateGameSettings({ screenShake: !this.saveData.settings.screenShake })
+    );
+    this.addSettingsToggle(
+      width / 2,
+      startY + 72,
+      panelWidth,
+      "Числа урона",
+      this.saveData.settings.damageNumbers,
+      () => this.updateGameSettings({ damageNumbers: !this.saveData.settings.damageNumbers })
+    );
+
+    this.addOverlayButton(width / 2 - 112, height / 2 + 136, 150, 46, "Назад", () => this.closeSettingsOverlay());
+    this.addOverlayButton(width / 2 + 112, height / 2 + 136, 210, 46, "Сбросить прогресс", () =>
+      this.showResetProgressConfirmOverlay()
+    );
+  }
+
+  private updateGameSettings(patch: Partial<SettingsData>): void {
+    const hadDamageNumbers = this.saveData.settings.damageNumbers;
+    this.saveData = updateSettings(this.saveData, patch);
+    this.persistSaveData();
+
+    if (hadDamageNumbers && !this.saveData.settings.damageNumbers) {
+      this.clearDamageNumbers();
+    }
+
+    this.showSettingsOverlay(this.settingsReturnTarget);
+  }
+
+  private closeSettingsOverlay(): void {
+    if (this.settingsReturnTarget === "pause") {
+      this.status = "paused";
+      this.setHudVisible(true);
+      this.showPauseOverlay();
+      return;
+    }
+
+    this.showMainMenu();
+  }
+
   private showResetProgressConfirmOverlay(): void {
     this.status = "reset_confirm";
     this.physics.pause();
@@ -1891,7 +1979,7 @@ export class RunScene extends Phaser.Scene {
     this.addOverlayText(
       width / 2,
       height / 2 - 34,
-      "Это удалит сохранённые кости, постоянные улучшения и статистику на этом устройстве.",
+      "Это удалит сохранённые кости, постоянные улучшения, статистику и настройки на этом устройстве.",
       18,
       "#d9cfba"
     )
@@ -1902,6 +1990,36 @@ export class RunScene extends Phaser.Scene {
       this.showMainMenu();
     });
     this.addOverlayButton(width / 2 + 112, height / 2 + 58, 150, 48, "Назад", () => this.showMainMenu());
+  }
+
+  private addSettingsToggle(
+    x: number,
+    y: number,
+    width: number,
+    label: string,
+    value: boolean,
+    onClick: () => void
+  ): void {
+    const card = this.addOverlayRectangle(x, y, width, 56, 0x171c17, 0.97);
+    card.setStrokeStyle(1, value ? 0xc9b46a : 0x44503e, 0.9);
+    card.setInteractive({ useHandCursor: true });
+    card.on("pointerdown", onClick);
+
+    const leftX = x - width / 2 + 20;
+    const toggleWidth = 104;
+    const toggleX = x + width / 2 - toggleWidth / 2 - 16;
+    const toggle = this.addOverlayRectangle(toggleX, y, toggleWidth, 34, value ? 0xc9b46a : 0x4b4438, 1);
+    toggle.setStrokeStyle(2, value ? 0x4a3921 : 0x2c2d28, 1);
+    toggle.setInteractive({ useHandCursor: true });
+    toggle.on("pointerover", () => toggle.setFillStyle(value ? 0xe1cd7d : 0x62594a, 1));
+    toggle.on("pointerout", () => toggle.setFillStyle(value ? 0xc9b46a : 0x4b4438, 1));
+    toggle.on("pointerdown", onClick);
+
+    this.addOverlayText(leftX, y, label, 20, "#f4ead7", "700")
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(width - toggleWidth - 60);
+    this.addOverlayText(toggleX, y, value ? "Вкл" : "Выкл", 18, value ? "#17140f" : "#c9c0ad", "700")
+      .setOrigin(0.5);
   }
 
   private addOverlayButton(
