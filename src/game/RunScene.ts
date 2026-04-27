@@ -9,7 +9,7 @@ import {
   type RingVisual
 } from "../domain/effects";
 import { selectPickupMergeTarget, type PickupMergeCandidate } from "../domain/pickups";
-import { calculateRetainedBones, xpRequired } from "../domain/progression";
+import { xpRequired } from "../domain/progression";
 import {
   ENEMY_SPAWN_CAPS,
   getScriptedEnemySpawns,
@@ -20,6 +20,28 @@ import {
 } from "../domain/spawnDirector";
 import { selectHomingTarget, type HomingTargetCandidate } from "../domain/homing";
 import { hasWonNight } from "../domain/runRules";
+import {
+  applyMetaToUpgradeState,
+  canBuyMetaUpgrade,
+  getMetaRetentionBonus,
+  getMetaUpgradeCost,
+  META_UPGRADE_DEFINITIONS,
+  purchaseMetaUpgrade,
+  type MetaUpgradeId
+} from "../domain/metaProgression";
+import {
+  applyRunEndSummaryToSave,
+  createRunEndSummary,
+  type RunEndSummary
+} from "../domain/runSummary";
+import {
+  createDefaultSaveData,
+  loadSave,
+  persistSave,
+  resetSave,
+  type SaveData,
+  type StorageLike
+} from "../domain/save";
 import {
   consumeTimedDamageTicks,
   createTimedDamageEffect,
@@ -46,7 +68,15 @@ const PLAYER_INVULNERABILITY_SECONDS = 0.35;
 const ENEMY_SEPARATION_STRENGTH = 0.92;
 const ENEMY_SEPARATION_NEIGHBORS = 8;
 
-type RunStatus = "menu" | "playing" | "paused" | "level_up" | "game_over" | "victory";
+type RunStatus =
+  | "menu"
+  | "playing"
+  | "paused"
+  | "level_up"
+  | "game_over"
+  | "victory"
+  | "meta_upgrades"
+  | "reset_confirm";
 
 type EnemySprite = Phaser.Physics.Arcade.Image & {
   runtimeId: number;
@@ -143,12 +173,48 @@ export class RunScene extends Phaser.Scene {
   private nextEnemyRuntimeId = 1;
   private pendingBellPulses: PendingBellPulse[] = [];
   private activeFinalBoss: EnemySprite | null = null;
+  private saveData: SaveData = createDefaultSaveData();
+  private runEndSummary: RunEndSummary | null = null;
 
   constructor() {
     super("RunScene");
   }
 
+  private getStorage(): StorageLike | null {
+    if (typeof globalThis.localStorage === "undefined") {
+      return null;
+    }
+
+    return globalThis.localStorage;
+  }
+
+  private loadSaveData(): void {
+    const storage = this.getStorage();
+    this.saveData = storage ? loadSave(storage) : createDefaultSaveData();
+  }
+
+  private persistSaveData(): void {
+    const storage = this.getStorage();
+
+    if (!storage) {
+      return;
+    }
+
+    persistSave(storage, this.saveData);
+  }
+
+  private resetSaveData(): void {
+    const storage = this.getStorage();
+
+    if (storage) {
+      resetSave(storage);
+    }
+
+    this.saveData = createDefaultSaveData();
+  }
+
   create(): void {
+    this.loadSaveData();
     this.createTextures();
     this.createArena();
     this.createGroups();
@@ -383,6 +449,8 @@ export class RunScene extends Phaser.Scene {
         this.pauseRun();
       } else if (this.status === "paused") {
         this.resumeRun();
+      } else if (this.status === "meta_upgrades" || this.status === "reset_confirm") {
+        this.showMainMenu();
       }
     });
   }
@@ -454,8 +522,10 @@ export class RunScene extends Phaser.Scene {
     this.clearOverlay();
     this.clearEntities();
     this.currentUpgradeOptions = [];
+    this.runEndSummary = null;
     this.nextEnemyRuntimeId = 1;
     const upgradeState = createInitialUpgradeState();
+    applyMetaToUpgradeState(upgradeState, this.saveData.meta);
 
     this.run = {
       hp: upgradeState.maxHp,
@@ -1522,6 +1592,7 @@ export class RunScene extends Phaser.Scene {
     this.setLowHpWarningVisible(false);
     this.activeFinalBoss = null;
     this.layoutHud();
+    this.finalizeRun(false);
     this.showGameOverOverlay();
   }
 
@@ -1533,7 +1604,29 @@ export class RunScene extends Phaser.Scene {
     this.setLowHpWarningVisible(false);
     this.activeFinalBoss = null;
     this.layoutHud();
+    this.finalizeRun(true);
     this.showVictoryOverlay();
+  }
+
+  private finalizeRun(won: boolean): RunEndSummary {
+    if (this.runEndSummary) {
+      return this.runEndSummary;
+    }
+
+    const summary = createRunEndSummary({
+      droppedBones: this.run.bonesCollected,
+      timeElapsed: this.run.timeElapsed,
+      won,
+      retentionBonus: getMetaRetentionBonus(this.saveData.meta)
+    });
+    this.saveData = applyRunEndSummaryToSave(this.saveData, summary, {
+      kills: this.run.kills,
+      level: this.run.level
+    });
+    this.persistSaveData();
+    this.runEndSummary = summary;
+
+    return summary;
   }
 
   private clearEntities(): void {
@@ -1568,8 +1661,20 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(subtitleWidth);
-    this.addOverlayButton(width / 2, height / 2 + 8, 220, 52, "Начать ночь", () => this.startRun());
-    this.addOverlayText(width / 2, height / 2 + 84, "Enter тоже запускает забег", 15, "#8f9687").setOrigin(0.5);
+    this.addOverlayText(
+      width / 2,
+      height / 2 - 24,
+      `Кости: ${this.saveData.bones}   Лучшее: ${formatTimer(this.saveData.stats.bestTime)}   Победы: ${this.saveData.stats.wins}/${this.saveData.stats.totalRuns}`,
+      18,
+      "#e5d39f",
+      "700"
+    )
+      .setOrigin(0.5)
+      .setWordWrapWidth(subtitleWidth);
+    this.addOverlayButton(width / 2, height / 2 + 26, 220, 52, "Начать ночь", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 90, 270, 48, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
+    this.addOverlayButton(width / 2, height / 2 + 150, 210, 44, "Сбросить прогресс", () => this.showResetProgressConfirmOverlay());
+    this.addOverlayText(width / 2, height / 2 + 202, "Enter тоже запускает забег", 15, "#8f9687").setOrigin(0.5);
   }
 
   private showPauseOverlay(): void {
@@ -1626,19 +1731,16 @@ export class RunScene extends Phaser.Scene {
     this.clearOverlay();
     this.setHudVisible(false);
     const { width, height } = this.scale;
-    const retainedBones = calculateRetainedBones({
-      collected: this.run.bonesCollected,
-      timeElapsed: this.run.timeElapsed,
-      won: false
-    });
+    const summary = this.runEndSummary ?? this.finalizeRun(false);
+    const bonusBones = summary.survivalBonus + summary.victoryBonus;
 
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.76);
-    this.addOverlayText(width / 2, height / 2 - 148, "Кладбище забрало своё", width < 520 ? 30 : 38, "#f4ead7", "700")
+    this.addOverlayText(width / 2, height / 2 - 168, "Кладбище забрало своё", width < 520 ? 30 : 38, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
     this.addOverlayText(
       width / 2,
-      height / 2 - 78,
+      height / 2 - 100,
       `Выжил ${formatTimer(this.run.timeElapsed)}   Убийства ${this.run.kills}   Уровень ${this.run.level}`,
       22,
       "#d9cfba"
@@ -1647,37 +1749,38 @@ export class RunScene extends Phaser.Scene {
       .setWordWrapWidth(width - 48);
     this.addOverlayText(
       width / 2,
-      height / 2 - 34,
-      `Кости собрано ${this.run.bonesCollected}   Сохранено ${retainedBones}`,
+      height / 2 - 54,
+      `Добыто ${summary.droppedBones}   Бонус ${bonusBones}   Сохранено ${summary.retainedBones}`,
       20,
       "#e5d39f"
     )
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayButton(width / 2, height / 2 + 38, 210, 52, "Повторить", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 102, 210, 48, "Главное меню", () => this.showMainMenu());
+    this.addOverlayText(width / 2, height / 2 - 14, `Баланс костей: ${this.saveData.bones}`, 20, "#f1dfaa", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 48);
+    this.addOverlayButton(width / 2, height / 2 + 46, 250, 52, "Потратить кости", () => this.showMetaUpgradesOverlay());
+    this.addOverlayButton(width / 2, height / 2 + 110, 210, 48, "Повторить", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 170, 210, 44, "Главное меню", () => this.showMainMenu());
   }
 
   private showVictoryOverlay(): void {
     this.clearOverlay();
     this.setHudVisible(false);
     const { width, height } = this.scale;
-    const retainedBones = calculateRetainedBones({
-      collected: this.run.bonesCollected,
-      timeElapsed: this.run.timeElapsed,
-      won: true
-    });
+    const summary = this.runEndSummary ?? this.finalizeRun(true);
+    const bonusBones = summary.survivalBonus + summary.victoryBonus;
 
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.74);
-    this.addOverlayText(width / 2, height / 2 - 156, "Ночь пережита", width < 520 ? 34 : 44, "#f4ead7", "700")
+    this.addOverlayText(width / 2, height / 2 - 176, "Ночь пережита", width < 520 ? 34 : 44, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
-    this.addOverlayText(width / 2, height / 2 - 96, "Капитан мёртв.", 22, "#f1dfaa", "700")
+    this.addOverlayText(width / 2, height / 2 - 118, "Капитан мёртв.", 22, "#f1dfaa", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
     this.addOverlayText(
       width / 2,
-      height / 2 - 42,
+      height / 2 - 72,
       `Время ${formatTimer(this.run.timeElapsed)}   Убийства ${this.run.kills}   Уровень ${this.run.level}`,
       22,
       "#d9cfba"
@@ -1686,15 +1789,119 @@ export class RunScene extends Phaser.Scene {
       .setWordWrapWidth(width - 48);
     this.addOverlayText(
       width / 2,
-      height / 2 + 2,
-      `Кости собрано ${this.run.bonesCollected}   Сохранено ${retainedBones}`,
+      height / 2 - 28,
+      `Добыто ${summary.droppedBones}   Бонус ${bonusBones}   Сохранено ${summary.retainedBones}`,
       20,
       "#e5d39f"
     )
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayButton(width / 2, height / 2 + 76, 210, 52, "Следующий забег", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 140, 210, 48, "Главное меню", () => this.showMainMenu());
+    this.addOverlayText(width / 2, height / 2 + 12, `Баланс костей: ${this.saveData.bones}`, 20, "#f1dfaa", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 48);
+    this.addOverlayButton(width / 2, height / 2 + 72, 270, 52, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
+    this.addOverlayButton(width / 2, height / 2 + 136, 210, 48, "Следующий забег", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 196, 210, 44, "Главное меню", () => this.showMainMenu());
+  }
+
+  private showMetaUpgradesOverlay(): void {
+    this.status = "meta_upgrades";
+    this.physics.pause();
+    this.setHudVisible(false);
+    this.clearDamageNumbers();
+    this.clearOverlay();
+
+    const { width, height } = this.scale;
+    const panelWidth = Math.min(width - 48, 760);
+    const cardWidth = Math.min(width - 64, 700);
+    const cardHeight = width < 720 ? 86 : 74;
+    const startY = width < 720 ? 150 : 154;
+
+    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.78);
+    this.addOverlayText(width / 2, 58, "Постоянные улучшения", width < 520 ? 30 : 40, "#f4ead7", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 44);
+    this.addOverlayText(width / 2, 104, `Кости: ${this.saveData.bones}`, 22, "#e5d39f", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(panelWidth);
+
+    META_UPGRADE_DEFINITIONS.forEach((definition, index) => {
+      const level = this.saveData.meta[definition.id];
+      const maxed = level >= definition.maxLevel;
+      const cost = getMetaUpgradeCost(definition.id, level);
+      const canBuy = canBuyMetaUpgrade(this.saveData, definition.id);
+      const y = startY + index * (cardHeight + 10);
+      const card = this.addOverlayRectangle(width / 2, y, cardWidth, cardHeight, 0x171c17, 0.97);
+      card.setStrokeStyle(1, canBuy ? 0xc9b46a : 0x44503e, 0.9);
+
+      const leftX = width / 2 - cardWidth / 2 + 20;
+      const buttonX = width / 2 + cardWidth / 2 - 72;
+      this.addOverlayText(leftX, y - 24, definition.name, 18, "#f4ead7", "700")
+        .setOrigin(0, 0.5)
+        .setWordWrapWidth(cardWidth - 170);
+      this.addOverlayText(
+        leftX,
+        y,
+        `${formatMetaLevelText(definition.id, level)}   ${definition.effectPerLevel}`,
+        14,
+        "#cfc4b0"
+      )
+        .setOrigin(0, 0.5)
+        .setWordWrapWidth(cardWidth - 170);
+      this.addOverlayText(leftX, y + 23, `Уровень ${level}/${definition.maxLevel}`, 14, "#8d9587")
+        .setOrigin(0, 0.5);
+
+      this.addOverlayButton(
+        buttonX,
+        y,
+        122,
+        38,
+        maxed ? "Макс" : `${cost}`,
+        () => this.buyMetaUpgrade(definition.id),
+        canBuy
+      );
+    });
+
+    this.addOverlayButton(width / 2 - 112, height - 54, 190, 46, "Начать ночь", () => this.startRun());
+    this.addOverlayButton(width / 2 + 112, height - 54, 150, 46, "Назад", () => this.showMainMenu());
+  }
+
+  private buyMetaUpgrade(id: MetaUpgradeId): void {
+    const result = purchaseMetaUpgrade(this.saveData, id);
+
+    if (result.purchased) {
+      this.saveData = result.save;
+      this.persistSaveData();
+    }
+
+    this.showMetaUpgradesOverlay();
+  }
+
+  private showResetProgressConfirmOverlay(): void {
+    this.status = "reset_confirm";
+    this.physics.pause();
+    this.setHudVisible(false);
+    this.clearOverlay();
+
+    const { width, height } = this.scale;
+    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.82);
+    this.addOverlayText(width / 2, height / 2 - 94, "Сбросить прогресс?", width < 520 ? 28 : 36, "#f4ead7", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 44);
+    this.addOverlayText(
+      width / 2,
+      height / 2 - 34,
+      "Это удалит сохранённые кости, постоянные улучшения и статистику на этом устройстве.",
+      18,
+      "#d9cfba"
+    )
+      .setOrigin(0.5)
+      .setWordWrapWidth(Math.min(width - 56, 560));
+    this.addOverlayButton(width / 2 - 112, height / 2 + 58, 190, 48, "Да, сбросить", () => {
+      this.resetSaveData();
+      this.showMainMenu();
+    });
+    this.addOverlayButton(width / 2 + 112, height / 2 + 58, 150, 48, "Назад", () => this.showMainMenu());
   }
 
   private addOverlayButton(
@@ -1703,15 +1910,20 @@ export class RunScene extends Phaser.Scene {
     width: number,
     height: number,
     label: string,
-    onClick: () => void
+    onClick: () => void,
+    enabled = true
   ): void {
-    const rect = this.addOverlayRectangle(x, y, width, height, 0xc9b46a, 1);
-    rect.setStrokeStyle(2, 0x4a3921, 1);
-    rect.setInteractive({ useHandCursor: true });
-    rect.on("pointerover", () => rect.setFillStyle(0xe1cd7d, 1));
-    rect.on("pointerout", () => rect.setFillStyle(0xc9b46a, 1));
-    rect.on("pointerdown", onClick);
-    this.addOverlayText(x, y, label, 20, "#17140f", "700").setOrigin(0.5);
+    const rect = this.addOverlayRectangle(x, y, width, height, enabled ? 0xc9b46a : 0x4b4438, 1);
+    rect.setStrokeStyle(2, enabled ? 0x4a3921 : 0x2c2d28, 1);
+
+    if (enabled) {
+      rect.setInteractive({ useHandCursor: true });
+      rect.on("pointerover", () => rect.setFillStyle(0xe1cd7d, 1));
+      rect.on("pointerout", () => rect.setFillStyle(0xc9b46a, 1));
+      rect.on("pointerdown", onClick);
+    }
+
+    this.addOverlayText(x, y, label, 20, enabled ? "#17140f" : "#9a917e", "700").setOrigin(0.5);
   }
 
   private addOverlayRectangle(
@@ -1966,6 +2178,30 @@ function formatWeaponHudLine(weaponId: string, stats: DerivedWeaponStats): strin
   }
 
   return `Костяные ножи  x${stats.projectileCount}  ${stats.cooldown.toFixed(1)}с`;
+}
+
+function formatMetaLevelText(id: MetaUpgradeId, level: number): string {
+  if (level <= 0) {
+    return "Сейчас: нет";
+  }
+
+  if (id === "meta_hp") {
+    return `Сейчас: +${level * 10} ОЗ`;
+  }
+
+  if (id === "meta_damage") {
+    return `Сейчас: +${level * 5}% урона`;
+  }
+
+  if (id === "meta_pickup") {
+    return `Сейчас: +${level * 10}% подбора`;
+  }
+
+  if (id === "meta_rare") {
+    return `Сейчас: +${level}% rare`;
+  }
+
+  return `Сейчас: +${level * 5}% retention`;
 }
 
 function getEnemyTexture(enemyId: string): string {

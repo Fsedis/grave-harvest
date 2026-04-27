@@ -78,6 +78,13 @@ describe("pickUpgradeRarity", () => {
     expect(pickUpgradeRarity(0.95)).toBe("rare");
     expect(pickUpgradeRarity(0.999)).toBe("rare");
   });
+
+  it("moves meta rare chance out of common chance while keeping uncommon stable", () => {
+    expect(pickUpgradeRarity(0.649, 0.05)).toBe("common");
+    expect(pickUpgradeRarity(0.65, 0.05)).toBe("uncommon");
+    expect(pickUpgradeRarity(0.899, 0.05)).toBe("uncommon");
+    expect(pickUpgradeRarity(0.9, 0.05)).toBe("rare");
+  });
 });
 
 describe("applyUpgrade", () => {

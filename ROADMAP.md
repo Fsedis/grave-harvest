@@ -23,13 +23,14 @@
 - 10-минутная spawn curve, enemy/projectile/pickup caps и pickup merging.
 - Retry loop явно сбрасывает боевые сущности, overlays и boss state.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
+- Bones сохраняются в localStorage и тратятся на 5 постоянных улучшений.
+- Экран Permanent Upgrades и reset progress.
 - Базовые run-upgrades и weapon-specific upgrades.
 - Basic rarity weighting для карт: common, uncommon, rare.
 - Чистая доменная логика с тестами.
 
 Ограничения версии:
-- Нет полного 10-минутного режима.
-- Нет мета-прогрессии, настроек, звуков и финального juice.
+- Нет настроек, звуков и финального juice.
 - Визуал намеренно серый и прототипный.
 
 ## Принципы разработки
@@ -103,18 +104,18 @@ Definition of Done:
 
 Цель: добавить причину запускать следующий забег.
 
-- [ ] Добавить bones drops в gameplay.
-- [ ] Реализовать retention по времени смерти.
-- [ ] Добавить localStorage save key `grave_harvest_save_v1`.
-- [ ] Добавить Permanent Upgrades screen.
-- [ ] Реализовать 5 meta-upgrades:
+- [x] Добавить bones drops в gameplay.
+- [x] Реализовать retention по времени смерти.
+- [x] Добавить localStorage save key `grave_harvest_save_v1`.
+- [x] Добавить Permanent Upgrades screen.
+- [x] Реализовать 5 meta-upgrades:
   - стартовое здоровье;
   - стартовый урон;
   - pickup radius;
   - rare upgrade chance;
   - bone retention.
-- [ ] Добавить reset progress.
-- [ ] Добавить stats: total runs, wins, best time, total kills, total bones earned.
+- [x] Добавить reset progress.
+- [x] Добавить stats: total runs, wins, best time, total kills, total bones earned.
 
 Definition of Done:
 - После смерти игрок получает сохраненные bones.
@@ -162,14 +163,14 @@ Definition of Done:
 
 ## Ближайший фокус
 
-Следующий рабочий срез: Bones And Meta Progression.
+Следующий рабочий срез: Juice And UX.
 
 Порядок задач:
-1. Добавить bones drops и retention.
-2. Добавить localStorage save `grave_harvest_save_v1`.
-3. Реализовать экран постоянных улучшений.
-4. Подключить 5 meta-upgrades к стартовому состоянию забега.
-5. Добавить reset progress и базовую статистику.
+1. Добавить settings screen.
+2. Подключить screen shake и damage numbers к настройкам.
+3. Добавить SFX для shot, hit, death, pickup, level-up, player hit.
+4. Добавить простую ambient/music loop.
+5. Улучшить pause screen и first-run hints.
 
 ## После MVP
 

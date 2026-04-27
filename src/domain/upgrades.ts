@@ -23,6 +23,7 @@ export type UpgradeState = {
   projectileBonus: number;
   critChance: number;
   critDamage: number;
+  rareChanceBonus: number;
   weapons: string[];
   weaponStats: Record<string, WeaponStatOverrides>;
   upgrades: Record<string, number>;
@@ -71,6 +72,7 @@ export function createInitialUpgradeState(): UpgradeState {
     projectileBonus: 0,
     critChance: 0.05,
     critDamage: 1.5,
+    rareChanceBonus: 0,
     weapons: ["bone_knives"],
     weaponStats: {
       bone_knives: createWeaponStatOverrides()
@@ -376,7 +378,7 @@ export function selectUpgradeOptions(
   const options: UpgradeDefinition[] = [];
 
   while (pool.length > 0 && options.length < count) {
-    const rarity = pickUpgradeRarity(rng());
+    const rarity = pickUpgradeRarity(rng(), state.rareChanceBonus);
     const rarityPool = pool.filter((upgrade) => upgrade.rarity === rarity);
     const sourcePool = rarityPool.length > 0 ? rarityPool : pool;
     const index = Math.min(sourcePool.length - 1, Math.floor(rng() * sourcePool.length));
@@ -399,12 +401,16 @@ export function selectUpgradeOptions(
   return options;
 }
 
-export function pickUpgradeRarity(roll: number): Rarity {
-  if (roll < 0.7) {
+export function pickUpgradeRarity(roll: number, rareBonus = 0): Rarity {
+  const safeRareBonus = Math.max(0, Math.min(0.65, rareBonus));
+  const commonChance = 0.7 - safeRareBonus;
+  const uncommonChance = 0.25;
+
+  if (roll < commonChance) {
     return "common";
   }
 
-  if (roll < 0.95) {
+  if (roll < commonChance + uncommonChance) {
     return "uncommon";
   }
 
