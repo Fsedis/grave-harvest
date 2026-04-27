@@ -49,7 +49,7 @@ export const META_UPGRADE_DEFINITIONS: MetaUpgradeDefinition[] = [
     id: "meta_retention",
     name: "Костяная страховка",
     description: "Больше костей сохраняется после смерти.",
-    effectPerLevel: "+5% retention после смерти",
+    effectPerLevel: "+5% сохранения костей после смерти",
     maxLevel: 5,
     baseCost: 45
   }

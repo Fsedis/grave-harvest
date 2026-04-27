@@ -4,12 +4,27 @@ import { createDefaultSaveData } from "./save";
 import {
   applyMetaToUpgradeState,
   canBuyMetaUpgrade,
+  getMetaUpgradeDefinition,
   getMetaRetentionBonus,
   getMetaUpgradeCost,
   purchaseMetaUpgrade
 } from "./metaProgression";
 
 describe("meta progression", () => {
+  it("keeps player-facing meta upgrade copy in Russian", () => {
+    const playerFacingText = [
+      "meta_retention",
+      "meta_rare"
+    ] as const;
+    const labels = playerFacingText.flatMap((id) => {
+      const definition = getMetaUpgradeDefinition(id);
+
+      return [definition.name, definition.description, definition.effectPerLevel];
+    });
+
+    expect(labels.join(" ")).not.toMatch(/\b(retention|rare)\b/i);
+  });
+
   it("uses the MVP cost formula", () => {
     expect(getMetaUpgradeCost("meta_hp", 0)).toBe(40);
     expect(getMetaUpgradeCost("meta_hp", 1)).toBe(101);

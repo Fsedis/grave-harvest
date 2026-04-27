@@ -2198,10 +2198,10 @@ function formatMetaLevelText(id: MetaUpgradeId, level: number): string {
   }
 
   if (id === "meta_rare") {
-    return `Сейчас: +${level}% rare`;
+    return `Сейчас: +${level}% редких карт`;
   }
 
-  return `Сейчас: +${level * 5}% retention`;
+  return `Сейчас: +${level * 5}% сохранения костей`;
 }
 
 function getEnemyTexture(enemyId: string): string {
