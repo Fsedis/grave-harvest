@@ -26,6 +26,7 @@
 - 10-минутная spawn curve, enemy/projectile/pickup caps и pickup merging.
 - Retry loop явно сбрасывает боевые сущности, overlays и boss state.
 - Первый MVP balance pass: целевые диапазоны закреплены тестами, Captain усилен, добавлен debug overlay через `?debug=balance`.
+- Movement + crowd feel polish: сглаженное движение, contact knockback и улучшенная читаемость толпы.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
 - Bones сохраняются в localStorage и тратятся на 5 постоянных улучшений.
 - Экран Permanent Upgrades и reset progress.
@@ -49,7 +50,7 @@
 
 Цель: сделать 2-3 минуты игры, которые уже ощущаются как Grave Harvest.
 
-- [ ] Улучшить feel движения игрока.
+- [x] Улучшить feel движения игрока.
 - [x] Настроить первые 2 минуты spawn curve.
 - [x] Добавить Grave Rat в игровой спавн.
 - [x] Добавить Rot Walker в игровой спавн.
@@ -172,7 +173,7 @@ Definition of Done:
 Следующий рабочий срез: MVP Balance And Release.
 
 Порядок задач:
-1. Пройти ручной balance run с `?debug=balance`.
+1. Пройти ручной full balance run с `?debug=balance`.
 2. Настроить целевую длительность первого проигрыша: 4-7 минут.
 3. Проверить FPS при 180 активных врагах.
 4. Проверить death/victory/retry loop на 3-5 забегах подряд.
