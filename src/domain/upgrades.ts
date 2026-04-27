@@ -1,4 +1,16 @@
+import { getWeaponDefinition, type WeaponDefinition } from "../data/weapons";
+
 export type Rarity = "common" | "uncommon" | "rare";
+
+export type WeaponStatOverrides = {
+  damageMultiplier: number;
+  cooldownMultiplier: number;
+  areaMultiplier: number;
+  projectileBonus: number;
+  extraPulses: number;
+  burn: boolean;
+  bleed: boolean;
+};
 
 export type UpgradeState = {
   maxHp: number;
@@ -12,7 +24,18 @@ export type UpgradeState = {
   critChance: number;
   critDamage: number;
   weapons: string[];
+  weaponStats: Record<string, WeaponStatOverrides>;
   upgrades: Record<string, number>;
+};
+
+export type DerivedWeaponStats = WeaponDefinition & {
+  damage: number;
+  cooldown: number;
+  radius: number;
+  projectileCount: number;
+  pulseCount: number;
+  burn: boolean;
+  bleed: boolean;
 };
 
 export type UpgradeDefinition = {
@@ -29,7 +52,12 @@ export type UpgradeDefinition = {
   apply: (state: UpgradeState) => void;
 };
 
-const GAMEPLAY_IMPLEMENTED_WEAPONS = new Set(["bone_knives"]);
+const GAMEPLAY_IMPLEMENTED_WEAPONS = new Set([
+  "bone_knives",
+  "holy_candle",
+  "grave_bell",
+  "crow_swarm"
+]);
 
 export function createInitialUpgradeState(): UpgradeState {
   return {
@@ -44,6 +72,9 @@ export function createInitialUpgradeState(): UpgradeState {
     critChance: 0.05,
     critDamage: 1.5,
     weapons: ["bone_knives"],
+    weaponStats: {
+      bone_knives: createWeaponStatOverrides()
+    },
     upgrades: {}
   };
 }
@@ -140,6 +171,7 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
     },
     apply: (state) => {
       state.projectileBonus += 1;
+      ensureWeaponStats(state, "bone_knives").projectileBonus += 1;
     }
   },
   {
@@ -152,7 +184,111 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
       weaponOwned: "holy_candle"
     },
     apply: (state) => {
-      state.areaMultiplier *= 1.2;
+      ensureWeaponStats(state, "holy_candle").areaMultiplier *= 1.2;
+    }
+  },
+  {
+    id: "candle_damage",
+    name: "Hotter Flame",
+    description: "Holy Candle +20% damage.",
+    rarity: "common",
+    maxStacks: 4,
+    requirements: {
+      weaponOwned: "holy_candle"
+    },
+    apply: (state) => {
+      ensureWeaponStats(state, "holy_candle").damageMultiplier *= 1.2;
+    }
+  },
+  {
+    id: "candle_burn",
+    name: "Unholy Burn",
+    description: "Holy Candle scorches enemies it touches.",
+    rarity: "uncommon",
+    maxStacks: 1,
+    requirements: {
+      weaponOwned: "holy_candle"
+    },
+    apply: (state) => {
+      ensureWeaponStats(state, "holy_candle").burn = true;
+    }
+  },
+  {
+    id: "bell_cooldown",
+    name: "Faster Bell",
+    description: "Grave Bell -20% cooldown.",
+    rarity: "common",
+    maxStacks: 3,
+    requirements: {
+      weaponOwned: "grave_bell"
+    },
+    apply: (state) => {
+      ensureWeaponStats(state, "grave_bell").cooldownMultiplier *= 0.8;
+    }
+  },
+  {
+    id: "bell_area",
+    name: "Deeper Toll",
+    description: "Grave Bell +25% radius.",
+    rarity: "common",
+    maxStacks: 3,
+    requirements: {
+      weaponOwned: "grave_bell"
+    },
+    apply: (state) => {
+      ensureWeaponStats(state, "grave_bell").areaMultiplier *= 1.25;
+    }
+  },
+  {
+    id: "bell_double_pulse",
+    name: "Second Toll",
+    description: "Grave Bell triggers a second delayed pulse.",
+    rarity: "rare",
+    maxStacks: 1,
+    requirements: {
+      weaponOwned: "grave_bell"
+    },
+    apply: (state) => {
+      ensureWeaponStats(state, "grave_bell").extraPulses += 1;
+    }
+  },
+  {
+    id: "crow_extra",
+    name: "More Crows",
+    description: "Crow Swarm sends +1 crow.",
+    rarity: "uncommon",
+    maxStacks: 3,
+    requirements: {
+      weaponOwned: "crow_swarm"
+    },
+    apply: (state) => {
+      ensureWeaponStats(state, "crow_swarm").projectileBonus += 1;
+    }
+  },
+  {
+    id: "crow_damage",
+    name: "Sharper Beaks",
+    description: "Crow Swarm +20% damage.",
+    rarity: "common",
+    maxStacks: 4,
+    requirements: {
+      weaponOwned: "crow_swarm"
+    },
+    apply: (state) => {
+      ensureWeaponStats(state, "crow_swarm").damageMultiplier *= 1.2;
+    }
+  },
+  {
+    id: "crow_bleed",
+    name: "Carrion Mark",
+    description: "Crows leave a bleeding wound.",
+    rarity: "rare",
+    maxStacks: 1,
+    requirements: {
+      weaponOwned: "crow_swarm"
+    },
+    apply: (state) => {
+      ensureWeaponStats(state, "crow_swarm").bleed = true;
     }
   },
   {
@@ -270,5 +406,46 @@ export function applyUpgrade(state: UpgradeState, upgradeId: string): void {
 function addWeapon(state: UpgradeState, weaponId: string): void {
   if (!state.weapons.includes(weaponId) && state.weapons.length < 4) {
     state.weapons.push(weaponId);
+    ensureWeaponStats(state, weaponId);
   }
+}
+
+export function getDerivedWeaponStats(state: UpgradeState, weaponId: string): DerivedWeaponStats {
+  const definition = getWeaponDefinition(weaponId);
+  const overrides = ensureWeaponStats(state, weaponId);
+  const globalCooldownMultiplier = Math.max(
+    0.25,
+    1 / state.attackSpeedMultiplier - state.cooldownReduction
+  );
+  const baseProjectileCount = definition.projectileCount ?? 1;
+  const projectileBonus = weaponId === "bone_knives" ? state.projectileBonus : overrides.projectileBonus;
+
+  return {
+    ...definition,
+    damage: definition.baseDamage * state.damageMultiplier * overrides.damageMultiplier,
+    cooldown: definition.cooldown * globalCooldownMultiplier * overrides.cooldownMultiplier,
+    radius: (definition.radius ?? definition.range) * state.areaMultiplier * overrides.areaMultiplier,
+    projectileCount: baseProjectileCount + projectileBonus,
+    pulseCount: 1 + overrides.extraPulses,
+    burn: overrides.burn,
+    bleed: overrides.bleed
+  };
+}
+
+function ensureWeaponStats(state: UpgradeState, weaponId: string): WeaponStatOverrides {
+  state.weaponStats[weaponId] ??= createWeaponStatOverrides();
+
+  return state.weaponStats[weaponId];
+}
+
+function createWeaponStatOverrides(): WeaponStatOverrides {
+  return {
+    damageMultiplier: 1,
+    cooldownMultiplier: 1,
+    areaMultiplier: 1,
+    projectileBonus: 0,
+    extraPulses: 0,
+    burn: false,
+    bleed: false
+  };
 }

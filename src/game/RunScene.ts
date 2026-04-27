@@ -1,11 +1,12 @@
 import Phaser from "phaser";
 import { type EnemyDefinition } from "../data/enemies";
-import { getWeaponDefinition } from "../data/weapons";
 import { calculateRetainedBones, xpRequired } from "../domain/progression";
 import { getSpawnBudgetPerSecond, pickEnemyForBudget } from "../domain/spawnDirector";
 import {
   applyUpgrade,
   createInitialUpgradeState,
+  getDerivedWeaponStats,
+  type DerivedWeaponStats,
   selectUpgradeOptions,
   type UpgradeDefinition,
   type UpgradeState
@@ -51,7 +52,7 @@ type RunStats = {
   kills: number;
   bonesCollected: number;
   spawnBudget: number;
-  knifeCooldown: number;
+  weaponCooldowns: Record<string, number>;
   invulnerableUntil: number;
   upgrades: UpgradeState;
 };
@@ -76,8 +77,8 @@ export class RunScene extends Phaser.Scene {
   private killText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
   private weaponPanel!: Phaser.GameObjects.Rectangle;
-  private weaponIcon!: Phaser.GameObjects.Image;
-  private weaponText!: Phaser.GameObjects.Text;
+  private weaponIcons: Phaser.GameObjects.Image[] = [];
+  private weaponTexts: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super("RunScene");
@@ -104,7 +105,7 @@ export class RunScene extends Phaser.Scene {
     this.updatePlayerMovement();
     this.updateSpawnDirector(dt);
     this.updateEnemies(dt);
-    this.updateBoneKnives(dt);
+    this.updateWeapons(dt);
     this.updateProjectiles(dt);
     this.updatePickups(dt);
     this.layoutHud();
@@ -182,6 +183,41 @@ export class RunScene extends Phaser.Scene {
     graphics.lineStyle(2, 0x201810, 1);
     graphics.strokeTriangle(4, 4, 28, 11, 4, 18);
     graphics.generateTexture("weapon_bone_knives", 32, 22);
+    graphics.clear();
+
+    graphics.fillStyle(0xf7d779, 1);
+    graphics.fillRoundedRect(12, 5, 8, 21, 3);
+    graphics.fillStyle(0xfff0a8, 1);
+    graphics.fillCircle(16, 5, 5);
+    graphics.lineStyle(2, 0x513619, 1);
+    graphics.strokeRoundedRect(12, 5, 8, 21, 3);
+    graphics.generateTexture("weapon_holy_candle", 32, 32);
+    graphics.clear();
+
+    graphics.lineStyle(4, 0xd1c3a4, 1);
+    graphics.strokeCircle(16, 16, 10);
+    graphics.lineStyle(3, 0x5c4a35, 1);
+    graphics.lineBetween(16, 6, 16, 2);
+    graphics.lineBetween(8, 10, 4, 6);
+    graphics.generateTexture("weapon_grave_bell", 32, 32);
+    graphics.clear();
+
+    graphics.fillStyle(0x20242a, 1);
+    graphics.fillTriangle(5, 17, 17, 8, 14, 19);
+    graphics.fillTriangle(14, 19, 24, 8, 27, 18);
+    graphics.fillCircle(16, 17, 4);
+    graphics.lineStyle(1, 0xa9b2c1, 1);
+    graphics.strokeCircle(16, 17, 4);
+    graphics.generateTexture("weapon_crow_swarm", 32, 32);
+    graphics.clear();
+
+    graphics.fillStyle(0x1d2229, 1);
+    graphics.fillTriangle(2, 10, 16, 2, 13, 13);
+    graphics.fillTriangle(13, 13, 27, 3, 30, 13);
+    graphics.fillCircle(16, 13, 4);
+    graphics.lineStyle(1, 0xa7b3c5, 0.8);
+    graphics.strokeCircle(16, 13, 4);
+    graphics.generateTexture("crow", 32, 20);
     graphics.clear();
 
     graphics.fillStyle(0x69d7ff, 1);
@@ -278,10 +314,15 @@ export class RunScene extends Phaser.Scene {
     this.killText = this.add.text(0, 50, "", { fontSize: "16px", color: "#c9c0ad" });
     const xpBack = this.add.rectangle(24, 0, 100, 12, 0x10222a, 0.95).setOrigin(0, 0);
     this.xpFill = this.add.rectangle(24, 0, 100, 12, 0x55bde0, 1).setOrigin(0, 0);
-    this.weaponPanel = this.add.rectangle(24, 0, 224, 40, 0x111612, 0.88).setOrigin(0, 0);
+    this.weaponPanel = this.add.rectangle(24, 0, 276, 40, 0x111612, 0.88).setOrigin(0, 0);
     this.weaponPanel.setStrokeStyle(1, 0x47513f, 0.9);
-    this.weaponIcon = this.add.image(0, 0, "weapon_bone_knives");
-    this.weaponText = this.add.text(0, 0, "", { fontSize: "15px", color: "#efe3c8" });
+    this.weaponIcons = [];
+    this.weaponTexts = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      this.weaponIcons.push(this.add.image(0, 0, "weapon_bone_knives"));
+      this.weaponTexts.push(this.add.text(0, 0, "", { fontSize: "14px", color: "#efe3c8" }));
+    }
 
     this.hudObjects = [
       hpBack,
@@ -294,8 +335,8 @@ export class RunScene extends Phaser.Scene {
       xpBack,
       this.xpFill,
       this.weaponPanel,
-      this.weaponIcon,
-      this.weaponText
+      ...this.weaponIcons,
+      ...this.weaponTexts
     ];
 
     this.hudObjects.forEach((object) => object.setScrollFactor(0).setDepth(1000));
@@ -317,7 +358,9 @@ export class RunScene extends Phaser.Scene {
       kills: 0,
       bonesCollected: 0,
       spawnBudget: 0,
-      knifeCooldown: 0.35,
+      weaponCooldowns: {
+        bone_knives: 0.35
+      },
       invulnerableUntil: 0,
       upgrades: upgradeState
     };
@@ -475,30 +518,39 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  private updateBoneKnives(dt: number): void {
-    this.run.knifeCooldown -= dt;
+  private updateWeapons(dt: number): void {
+    for (const weaponId of this.run.upgrades.weapons) {
+      this.run.weaponCooldowns[weaponId] ??= 0.1;
+      this.run.weaponCooldowns[weaponId] -= dt;
 
-    if (this.run.knifeCooldown > 0) {
-      return;
+      if (this.run.weaponCooldowns[weaponId] > 0) {
+        continue;
+      }
+
+      const stats = getDerivedWeaponStats(this.run.upgrades, weaponId);
+      this.run.weaponCooldowns[weaponId] = stats.cooldown;
+
+      if (weaponId === "bone_knives") {
+        this.fireBoneKnives(stats);
+      } else if (weaponId === "holy_candle") {
+        this.tickHolyCandle(stats);
+      } else if (weaponId === "grave_bell") {
+        this.ringGraveBell(stats);
+      } else if (weaponId === "crow_swarm") {
+        this.releaseCrowSwarm(stats);
+      }
     }
+  }
 
-    const weapon = getWeaponDefinition("bone_knives");
-    const cooldownMultiplier = Math.max(
-      0.25,
-      1 / this.run.upgrades.attackSpeedMultiplier - this.run.upgrades.cooldownReduction
-    );
-    this.run.knifeCooldown = weapon.cooldown * cooldownMultiplier;
-
-    const projectileCount = (weapon.projectileCount ?? 1) + this.run.upgrades.projectileBonus;
-
-    for (let index = 0; index < projectileCount; index += 1) {
-      const target = this.findNearestEnemy(weapon.range);
+  private fireBoneKnives(stats: DerivedWeaponStats): void {
+    for (let index = 0; index < stats.projectileCount; index += 1) {
+      const target = this.findNearestEnemy(stats.range);
 
       if (!target) {
         return;
       }
 
-      this.fireKnifeAt(target, index, projectileCount);
+      this.fireKnifeAt(target, stats, index, stats.projectileCount);
     }
   }
 
@@ -524,8 +576,31 @@ export class RunScene extends Phaser.Scene {
     return nearest;
   }
 
-  private fireKnifeAt(target: EnemySprite, index: number, total: number): void {
-    const weapon = getWeaponDefinition("bone_knives");
+  private findRandomEnemy(range: number): EnemySprite | null {
+    const candidates: EnemySprite[] = [];
+
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as EnemySprite;
+
+      if (!enemy.active) {
+        continue;
+      }
+
+      const distanceSq = Phaser.Math.Distance.Squared(this.player.x, this.player.y, enemy.x, enemy.y);
+
+      if (distanceSq <= range * range) {
+        candidates.push(enemy);
+      }
+    }
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    return candidates[Phaser.Math.Between(0, candidates.length - 1)];
+  }
+
+  private fireKnifeAt(target: EnemySprite, stats: DerivedWeaponStats, index: number, total: number): void {
     const projectile = this.projectiles.get(this.player.x, this.player.y, "knife") as ProjectileSprite | null;
 
     if (!projectile) {
@@ -535,20 +610,119 @@ export class RunScene extends Phaser.Scene {
     const aim = Phaser.Math.Angle.Between(this.player.x, this.player.y, target.x, target.y);
     const spread = total > 1 ? Phaser.Math.DegToRad((index - (total - 1) / 2) * 9) : 0;
     const angle = aim + spread;
-    const speed = weapon.projectileSpeed ?? 420;
+    const speed = stats.projectileSpeed ?? 420;
     const crit = Math.random() < this.run.upgrades.critChance;
     const critMultiplier = crit ? this.run.upgrades.critDamage : 1;
 
-    projectile.damage = Math.round(weapon.baseDamage * this.run.upgrades.damageMultiplier * critMultiplier);
-    projectile.range = weapon.range;
+    projectile.damage = Math.round(stats.damage * critMultiplier);
+    projectile.range = stats.range;
     projectile.traveled = 0;
     projectile.pierce = 0;
+    projectile.setTexture("knife");
     projectile.setActive(true);
     projectile.setVisible(true);
     projectile.enableBody(true, this.player.x, this.player.y, true, true);
     projectile.setDepth(18);
     projectile.setRotation(angle);
     projectile.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+  }
+
+  private tickHolyCandle(stats: DerivedWeaponStats): void {
+    this.createRingBurst(this.player.x, this.player.y, 0xf7d779, stats.radius);
+
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as EnemySprite;
+
+      if (!enemy.active) {
+        continue;
+      }
+
+      const distanceSq = Phaser.Math.Distance.Squared(this.player.x, this.player.y, enemy.x, enemy.y);
+
+      if (distanceSq <= stats.radius * stats.radius) {
+        this.damageEnemy(enemy, Math.max(1, Math.round(stats.damage)));
+
+        if (stats.burn && enemy.active) {
+          this.damageEnemy(enemy, Math.max(1, Math.round(stats.damage * 0.35)));
+          this.createBurst(enemy.x, enemy.y, 0xf7944d, 2, 10, 110);
+        }
+      }
+    }
+  }
+
+  private ringGraveBell(stats: DerivedWeaponStats): void {
+    for (let pulse = 0; pulse < stats.pulseCount; pulse += 1) {
+      const delay = pulse * 180;
+
+      this.time.delayedCall(delay, () => {
+        if (this.status === "playing") {
+          this.applyBellPulse(stats, pulse);
+        }
+      });
+    }
+  }
+
+  private applyBellPulse(stats: DerivedWeaponStats, pulseIndex: number): void {
+    const radius = stats.radius * (pulseIndex === 0 ? 1 : 0.82);
+    const damage = Math.max(1, Math.round(stats.damage * (pulseIndex === 0 ? 1 : 0.65)));
+    this.createRingBurst(this.player.x, this.player.y, 0xcdbb8d, radius);
+    this.cameras.main.shake(80, 0.003);
+
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as EnemySprite;
+
+      if (!enemy.active) {
+        continue;
+      }
+
+      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+
+      if (distance <= radius) {
+        this.damageEnemy(enemy, damage);
+
+        if (enemy.active && distance > 0) {
+          const knockback = 42 * (1 - enemy.def.knockbackResistance);
+          enemy.x += ((enemy.x - this.player.x) / distance) * knockback;
+          enemy.y += ((enemy.y - this.player.y) / distance) * knockback;
+        }
+      }
+    }
+  }
+
+  private releaseCrowSwarm(stats: DerivedWeaponStats): void {
+    for (let index = 0; index < stats.projectileCount; index += 1) {
+      const target = this.findRandomEnemy(stats.range);
+
+      if (!target) {
+        return;
+      }
+
+      this.fireCrowAt(target, stats, index, stats.projectileCount);
+    }
+  }
+
+  private fireCrowAt(target: EnemySprite, stats: DerivedWeaponStats, index: number, total: number): void {
+    const projectile = this.projectiles.get(this.player.x, this.player.y, "crow") as ProjectileSprite | null;
+
+    if (!projectile) {
+      return;
+    }
+
+    const aim = Phaser.Math.Angle.Between(this.player.x, this.player.y, target.x, target.y);
+    const spread = total > 1 ? Phaser.Math.DegToRad((index - (total - 1) / 2) * 14) : 0;
+    const angle = aim + spread;
+
+    projectile.damage = Math.round(stats.damage);
+    projectile.range = stats.range;
+    projectile.traveled = 0;
+    projectile.pierce = stats.bleed ? 1 : 0;
+    projectile.setTexture("crow");
+    projectile.setActive(true);
+    projectile.setVisible(true);
+    projectile.enableBody(true, this.player.x, this.player.y, true, true);
+    projectile.setDepth(19);
+    projectile.setRotation(angle);
+    projectile.setVelocity(Math.cos(angle) * 520, Math.sin(angle) * 520);
   }
 
   private updateProjectiles(dt: number): void {
@@ -579,7 +753,13 @@ export class RunScene extends Phaser.Scene {
 
         if (distanceSq <= hitDistance * hitDistance) {
           this.damageEnemy(enemy, projectile.damage);
-          projectile.disableBody(true, true);
+          if (projectile.pierce > 0) {
+            projectile.pierce -= 1;
+            projectile.damage = Math.max(1, Math.round(projectile.damage * 0.5));
+            this.createBurst(projectile.x, projectile.y, 0x9aa8bd, 3, 14, 120);
+          } else {
+            projectile.disableBody(true, true);
+          }
           break;
         }
       }
@@ -1040,22 +1220,35 @@ export class RunScene extends Phaser.Scene {
       .setPosition(width - (compact ? 16 : 24), compact ? 84 : 50)
       .setOrigin(1, 0);
 
-    const weaponPanelWidth = compact ? Math.min(224, width - 32) : 224;
-    const weaponY = height - 82;
-    const weapon = getWeaponDefinition("bone_knives");
-    const projectileCount = (weapon.projectileCount ?? 1) + this.run.upgrades.projectileBonus;
-    const cooldownMultiplier = Math.max(
-      0.25,
-      1 / this.run.upgrades.attackSpeedMultiplier - this.run.upgrades.cooldownReduction
-    );
-    const cooldown = weapon.cooldown * cooldownMultiplier;
+    const activeWeapons = this.run.upgrades.weapons.slice(0, 4);
+    const weaponPanelWidth = compact ? Math.min(276, width - 32) : 276;
+    const weaponPanelHeight = 14 + activeWeapons.length * 28;
+    const weaponY = height - 42 - weaponPanelHeight;
+    const weaponX = compact ? 16 : 24;
 
-    this.weaponPanel.setPosition(compact ? 16 : 24, weaponY);
+    this.weaponPanel.setPosition(weaponX, weaponY);
     this.weaponPanel.width = weaponPanelWidth;
-    this.weaponIcon.setPosition((compact ? 16 : 24) + 24, weaponY + 20);
-    this.weaponText
-      .setText(`Bone Knives  x${projectileCount}  ${cooldown.toFixed(1)}s`)
-      .setPosition((compact ? 16 : 24) + 48, weaponY + 11);
+    this.weaponPanel.height = weaponPanelHeight;
+
+    this.weaponIcons.forEach((icon, index) => {
+      const weaponId = activeWeapons[index];
+      const text = this.weaponTexts[index];
+
+      if (!weaponId) {
+        icon.setVisible(false);
+        text.setVisible(false);
+        return;
+      }
+
+      const stats = getDerivedWeaponStats(this.run.upgrades, weaponId);
+      icon.setVisible(true);
+      text.setVisible(true);
+      icon.setTexture(getWeaponIconTexture(weaponId));
+      icon.setPosition(weaponX + 22, weaponY + 22 + index * 28);
+      text
+        .setText(formatWeaponHudLine(weaponId, stats))
+        .setPosition(weaponX + 44, weaponY + 13 + index * 28);
+    });
   }
 }
 
@@ -1081,6 +1274,38 @@ function getRarityColor(rarity: UpgradeDefinition["rarity"]): number {
 
 function colorToCss(color: number): string {
   return `#${color.toString(16).padStart(6, "0")}`;
+}
+
+function getWeaponIconTexture(weaponId: string): string {
+  if (weaponId === "holy_candle") {
+    return "weapon_holy_candle";
+  }
+
+  if (weaponId === "grave_bell") {
+    return "weapon_grave_bell";
+  }
+
+  if (weaponId === "crow_swarm") {
+    return "weapon_crow_swarm";
+  }
+
+  return "weapon_bone_knives";
+}
+
+function formatWeaponHudLine(weaponId: string, stats: DerivedWeaponStats): string {
+  if (weaponId === "holy_candle") {
+    return `Holy Candle  r${Math.round(stats.radius)}  ${stats.cooldown.toFixed(1)}s`;
+  }
+
+  if (weaponId === "grave_bell") {
+    return `Grave Bell  x${stats.pulseCount}  ${stats.cooldown.toFixed(1)}s`;
+  }
+
+  if (weaponId === "crow_swarm") {
+    return `Crow Swarm  x${stats.projectileCount}  ${stats.cooldown.toFixed(1)}s`;
+  }
+
+  return `Bone Knives  x${stats.projectileCount}  ${stats.cooldown.toFixed(1)}s`;
 }
 
 function getEnemyTexture(enemyId: string): string {

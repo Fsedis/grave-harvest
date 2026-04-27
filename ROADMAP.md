@@ -51,14 +51,14 @@ Definition of Done:
 
 Цель: довести run-контент до минимального набора из PRD.
 
-- [ ] Реализовать Holy Candle.
-- [ ] Реализовать Grave Bell.
-- [ ] Реализовать Crow Swarm.
+- [x] Реализовать Holy Candle.
+- [x] Реализовать Grave Bell.
+- [x] Реализовать Crow Swarm.
 - [ ] Добавить Ghost с волнообразным движением.
 - [ ] Добавить Bone Knight как элиту.
 - [ ] Добавить Bone Knight Captain на 9:30.
-- [ ] Добавить weapon-specific upgrades.
-- [ ] Довести список run-upgrades минимум до 20 карт.
+- [x] Добавить weapon-specific upgrades.
+- [x] Довести список run-upgrades минимум до 20 карт.
 - [ ] Добавить basic rarity weighting: common, uncommon, rare.
 
 Definition of Done:

@@ -3,6 +3,7 @@ import {
   applyUpgrade,
   createInitialUpgradeState,
   getAvailableUpgrades,
+  getDerivedWeaponStats,
   selectUpgradeOptions
 } from "./upgrades";
 
@@ -21,12 +22,27 @@ describe("getAvailableUpgrades", () => {
     expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "candle_area")).toBe(false);
   });
 
-  it("does not offer unlock cards for weapons without gameplay implementation", () => {
+  it("offers unlock cards for implemented weapons the player does not own yet", () => {
     const state = createInitialUpgradeState();
 
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_candle")).toBe(true);
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_bell")).toBe(true);
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_crows")).toBe(true);
+  });
+
+  it("hides unlock cards for weapons the player already owns", () => {
+    const state = createInitialUpgradeState();
+    applyUpgrade(state, "unlock_candle");
+
     expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_candle")).toBe(false);
-    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_bell")).toBe(false);
-    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_crows")).toBe(false);
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "candle_area")).toBe(true);
+  });
+
+  it("hides unlock cards when the weapon limit is reached", () => {
+    const state = createInitialUpgradeState();
+    state.weapons = ["bone_knives", "holy_candle", "grave_bell", "crow_swarm"];
+
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id.startsWith("unlock_"))).toBe(false);
   });
 });
 
@@ -57,5 +73,43 @@ describe("applyUpgrade", () => {
 
     expect(state.weapons).toContain("holy_candle");
     expect(state.upgrades.unlock_candle).toBe(1);
+  });
+});
+
+describe("getDerivedWeaponStats", () => {
+  it("applies candle radius and damage upgrades", () => {
+    const state = createInitialUpgradeState();
+    applyUpgrade(state, "unlock_candle");
+    applyUpgrade(state, "candle_area");
+    applyUpgrade(state, "candle_damage");
+
+    const stats = getDerivedWeaponStats(state, "holy_candle");
+
+    expect(stats.radius).toBeCloseTo(132);
+    expect(stats.damage).toBeCloseTo(4.8);
+  });
+
+  it("applies bell cooldown and second pulse upgrades", () => {
+    const state = createInitialUpgradeState();
+    applyUpgrade(state, "unlock_bell");
+    applyUpgrade(state, "bell_cooldown");
+    applyUpgrade(state, "bell_double_pulse");
+
+    const stats = getDerivedWeaponStats(state, "grave_bell");
+
+    expect(stats.cooldown).toBeCloseTo(3.2);
+    expect(stats.pulseCount).toBe(2);
+  });
+
+  it("applies extra crow and crow damage upgrades", () => {
+    const state = createInitialUpgradeState();
+    applyUpgrade(state, "unlock_crows");
+    applyUpgrade(state, "crow_extra");
+    applyUpgrade(state, "crow_damage");
+
+    const stats = getDerivedWeaponStats(state, "crow_swarm");
+
+    expect(stats.projectileCount).toBe(2);
+    expect(stats.damage).toBeCloseTo(14.4);
   });
 });
