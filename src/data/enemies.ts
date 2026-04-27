@@ -84,7 +84,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     knockbackResistance: 0.65,
     behavior: "zigzag",
     spawnCost: 4,
-    firstAppearsAt: 150,
+    firstAppearsAt: 240,
     color: 0xa8e7ff
   },
   {

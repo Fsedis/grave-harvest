@@ -4,6 +4,7 @@ import {
   createInitialUpgradeState,
   getAvailableUpgrades,
   getDerivedWeaponStats,
+  pickUpgradeRarity,
   selectUpgradeOptions
 } from "./upgrades";
 
@@ -53,6 +54,29 @@ describe("selectUpgradeOptions", () => {
 
     expect(options).toHaveLength(3);
     expect(new Set(options.map((option) => option.id)).size).toBe(3);
+  });
+
+  it("uses rarity weights when selecting cards", () => {
+    const state = createInitialUpgradeState();
+    applyUpgrade(state, "unlock_candle");
+    applyUpgrade(state, "unlock_bell");
+    applyUpgrade(state, "unlock_crows");
+    const rng = createSequenceRng([0.96, 0, 0.72, 0, 0.1, 0]);
+
+    const options = selectUpgradeOptions(state, rng, 3);
+
+    expect(options.map((option) => option.rarity)).toEqual(["rare", "uncommon", "common"]);
+  });
+});
+
+describe("pickUpgradeRarity", () => {
+  it("maps rolls to the MVP rarity curve", () => {
+    expect(pickUpgradeRarity(0)).toBe("common");
+    expect(pickUpgradeRarity(0.699)).toBe("common");
+    expect(pickUpgradeRarity(0.7)).toBe("uncommon");
+    expect(pickUpgradeRarity(0.949)).toBe("uncommon");
+    expect(pickUpgradeRarity(0.95)).toBe("rare");
+    expect(pickUpgradeRarity(0.999)).toBe("rare");
   });
 });
 
@@ -113,3 +137,9 @@ describe("getDerivedWeaponStats", () => {
     expect(stats.damage).toBeCloseTo(14.4);
   });
 });
+
+function createSequenceRng(values: number[]): () => number {
+  let index = 0;
+
+  return () => values[index++] ?? values[values.length - 1] ?? 0;
+}

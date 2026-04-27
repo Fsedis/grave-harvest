@@ -1,7 +1,12 @@
 import Phaser from "phaser";
-import { type EnemyDefinition } from "../data/enemies";
+import { getEnemyDefinition, type EnemyDefinition } from "../data/enemies";
 import { calculateRetainedBones, xpRequired } from "../domain/progression";
-import { getSpawnBudgetPerSecond, pickEnemyForBudget } from "../domain/spawnDirector";
+import {
+  getScriptedEnemySpawns,
+  getSpawnBudgetPerSecond,
+  pickEnemyForBudget,
+  type ScriptedEnemySpawn
+} from "../domain/spawnDirector";
 import {
   applyUpgrade,
   createInitialUpgradeState,
@@ -29,6 +34,14 @@ type EnemySprite = Phaser.Physics.Arcade.Image & {
   hp: number;
   maxHp: number;
   spawnedAt: number;
+  isElite: boolean;
+  eliteName: string;
+  nextDashAt: number;
+  dashUntil: number;
+  visualPulseSeed: number;
+  baseDisplayWidth: number;
+  baseDisplayHeight: number;
+  baseTint: number;
 };
 
 type ProjectileSprite = Phaser.Physics.Arcade.Image & {
@@ -414,6 +427,11 @@ export class RunScene extends Phaser.Scene {
   }
 
   private updateSpawnDirector(dt: number): void {
+    const previousTime = Math.max(0, this.run.timeElapsed - dt);
+    const scriptedSpawns = getScriptedEnemySpawns(previousTime, this.run.timeElapsed);
+
+    scriptedSpawns.forEach((spawn) => this.spawnScriptedEnemy(spawn));
+
     const activeEnemies = this.enemies.countActive(true);
 
     if (activeEnemies >= HARD_ENEMY_CAP) {
@@ -438,30 +456,56 @@ export class RunScene extends Phaser.Scene {
   }
 
   private spawnEnemy(definition: EnemyDefinition): void {
+    this.spawnEnemyInstance(definition);
+  }
+
+  private spawnScriptedEnemy(spawn: ScriptedEnemySpawn): void {
+    const definition = getEnemyDefinition(spawn.enemyId);
+    const enemy = this.spawnEnemyInstance(definition, spawn);
+
+    if (enemy) {
+      this.createRingBurst(enemy.x, enemy.y, spawn.color, definition.radius * 2.2 * spawn.scaleMultiplier);
+      this.showWorldText(enemy.x, enemy.y - definition.radius * 2.8, spawn.name, "#f1dfaa", 24);
+      this.cameras.main.shake(spawn.id === "bone_knight_captain" ? 260 : 160, 0.005);
+    }
+  }
+
+  private spawnEnemyInstance(definition: EnemyDefinition, scripted?: ScriptedEnemySpawn): EnemySprite | null {
     const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    const radius = Phaser.Math.Between(520, 860);
+    const radius = scripted ? Phaser.Math.Between(560, 720) : Phaser.Math.Between(520, 860);
     const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * radius, 40, MAP_SIZE - 40);
     const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * radius, 40, MAP_SIZE - 40);
     const enemy = this.enemies.get(x, y, getEnemyTexture(definition.id)) as EnemySprite | null;
 
     if (!enemy) {
-      return;
+      return null;
     }
 
+    const scaleMultiplier = scripted?.scaleMultiplier ?? 1;
+    const display = getEnemyDisplaySize(definition);
     enemy.def = definition;
-    enemy.hp = definition.hp;
-    enemy.maxHp = definition.hp;
+    enemy.hp = Math.round(definition.hp * (scripted?.hpMultiplier ?? 1));
+    enemy.maxHp = enemy.hp;
     enemy.spawnedAt = this.run.timeElapsed;
+    enemy.isElite = Boolean(scripted);
+    enemy.eliteName = scripted?.name ?? "";
+    enemy.nextDashAt = definition.behavior === "dash" ? this.run.timeElapsed + 1.4 : Number.POSITIVE_INFINITY;
+    enemy.dashUntil = 0;
+    enemy.visualPulseSeed = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    enemy.baseDisplayWidth = display.width * scaleMultiplier;
+    enemy.baseDisplayHeight = display.height * scaleMultiplier;
+    enemy.baseTint = scripted?.color ?? definition.color;
     enemy.setTexture(getEnemyTexture(definition.id));
     enemy.setActive(true);
     enemy.setVisible(true);
     enemy.enableBody(true, x, y, true, true);
     enemy.setSize(definition.radius * 1.6, definition.radius * 1.6);
-    const display = getEnemyDisplaySize(definition);
-    enemy.setDisplaySize(display.width, display.height);
-    enemy.setTint(definition.color);
+    enemy.setDisplaySize(enemy.baseDisplayWidth, enemy.baseDisplayHeight);
+    enemy.setTint(enemy.baseTint);
     enemy.setAlpha(definition.id === "ghost" ? 0.72 : 1);
-    enemy.setDepth(15);
+    enemy.setDepth(scripted ? 17 : 15);
+
+    return enemy;
   }
 
   private updateEnemies(dt: number): void {
@@ -475,20 +519,36 @@ export class RunScene extends Phaser.Scene {
       const toPlayer = new Phaser.Math.Vector2(this.player.x - enemy.x, this.player.y - enemy.y);
       const distance = Math.max(1, toPlayer.length());
       const direction = toPlayer.normalize();
+      let speed = enemy.def.speed;
+      let separationStrength = ENEMY_SEPARATION_STRENGTH;
 
       if (enemy.def.behavior === "zigzag") {
         const wobble = Math.sin((this.run.timeElapsed - enemy.spawnedAt) * 5) * 0.75;
         direction.rotate(wobble);
       }
 
+      if (enemy.def.behavior === "dash") {
+        if (this.run.timeElapsed >= enemy.nextDashAt) {
+          enemy.dashUntil = this.run.timeElapsed + 0.42;
+          enemy.nextDashAt = this.run.timeElapsed + 5;
+          this.createRingBurst(enemy.x, enemy.y, enemy.isElite ? 0xd1c07d : 0xc8c0b0, enemy.def.radius + 18);
+        }
+
+        if (this.run.timeElapsed < enemy.dashUntil) {
+          speed *= 2.6;
+          separationStrength *= 0.35;
+        }
+      }
+
       const separation = this.calculateEnemySeparation(enemy);
-      const movement = direction.add(separation.scale(ENEMY_SEPARATION_STRENGTH));
+      const movement = direction.add(separation.scale(separationStrength));
 
       if (movement.lengthSq() > 0) {
         movement.normalize();
       }
 
-      enemy.setVelocity(movement.x * enemy.def.speed, movement.y * enemy.def.speed);
+      enemy.setVelocity(movement.x * speed, movement.y * speed);
+      this.updateEnemyVisual(enemy);
 
       if (distance < PLAYER_RADIUS + enemy.def.radius && this.run.timeElapsed >= this.run.invulnerableUntil) {
         this.damagePlayer(enemy.def.damage);
@@ -498,6 +558,18 @@ export class RunScene extends Phaser.Scene {
         enemy.x -= direction.x * 18 * dt;
         enemy.y -= direction.y * 18 * dt;
       }
+    }
+  }
+
+  private updateEnemyVisual(enemy: EnemySprite): void {
+    if (enemy.def.id === "ghost") {
+      const phase = (this.run.timeElapsed - enemy.spawnedAt) * 4.2 + enemy.visualPulseSeed;
+      enemy.setAlpha(0.58 + Math.sin(phase) * 0.16);
+    }
+
+    if (enemy.isElite) {
+      const pulse = 1 + Math.sin(this.run.timeElapsed * 4 + enemy.visualPulseSeed) * 0.035;
+      enemy.setDisplaySize(enemy.baseDisplayWidth * pulse, enemy.baseDisplayHeight * pulse);
     }
   }
 
@@ -774,7 +846,7 @@ export class RunScene extends Phaser.Scene {
     }
     this.time.delayedCall(55, () => {
       if (enemy.active) {
-        enemy.setTint(enemy.def.color);
+        enemy.setTint(enemy.baseTint);
       }
     });
 
@@ -785,16 +857,29 @@ export class RunScene extends Phaser.Scene {
 
   private killEnemy(enemy: EnemySprite): void {
     const { x, y, def } = enemy;
+    const burstScale = enemy.isElite ? 1.7 : 1;
     enemy.disableBody(true, true);
     this.run.kills += 1;
     this.spawnPickup("xp", x, y, def.xpDrop);
 
     if (Math.random() < def.bonesDropChance) {
-      this.spawnPickup("bones", x + Phaser.Math.Between(-10, 10), y + Phaser.Math.Between(-10, 10), def.bonesMin);
+      this.spawnPickup(
+        "bones",
+        x + Phaser.Math.Between(-10, 10),
+        y + Phaser.Math.Between(-10, 10),
+        Phaser.Math.Between(def.bonesMin, def.bonesMax)
+      );
     }
 
-    this.createBurst(x, y, getDeathBurstColor(def.id), def.id === "rot_walker" ? 9 : 6, 34, 240);
-    this.createRingBurst(x, y, getDeathBurstColor(def.id), def.radius + 8);
+    this.createBurst(
+      x,
+      y,
+      getDeathBurstColor(def.id),
+      Math.round((def.id === "rot_walker" ? 9 : 6) * burstScale),
+      Math.round(34 * burstScale),
+      240
+    );
+    this.createRingBurst(x, y, getDeathBurstColor(def.id), (def.radius + 8) * burstScale);
   }
 
   private spawnPickup(type: PickupSprite["pickupType"], x: number, y: number, value: number): void {
@@ -942,6 +1027,29 @@ export class RunScene extends Phaser.Scene {
       duration: 220,
       ease: "Quad.easeOut",
       onComplete: () => ring.destroy()
+    });
+  }
+
+  private showWorldText(x: number, y: number, text: string, color: string, fontSize: number): void {
+    const label = this.add
+      .text(x, y, text, {
+        fontFamily: "Inter, Arial, sans-serif",
+        fontSize: `${fontSize}px`,
+        fontStyle: "700",
+        color,
+        stroke: "#15110d",
+        strokeThickness: 4
+      })
+      .setOrigin(0.5)
+      .setDepth(120);
+
+    this.tweens.add({
+      targets: label,
+      y: y - 36,
+      alpha: 0,
+      duration: 1200,
+      ease: "Quad.easeOut",
+      onComplete: () => label.destroy()
     });
   }
 

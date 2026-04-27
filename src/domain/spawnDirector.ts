@@ -16,6 +16,37 @@ const BUDGET_CURVE = [
   { time: 540, budget: 18 }
 ] as const;
 
+export type ScriptedEnemySpawn = {
+  id: string;
+  enemyId: string;
+  name: string;
+  time: number;
+  hpMultiplier: number;
+  scaleMultiplier: number;
+  color: number;
+};
+
+const SCRIPTED_ENEMY_SPAWNS: ScriptedEnemySpawn[] = [
+  {
+    id: "bone_knight_elite",
+    enemyId: "bone_knight",
+    name: "Bone Knight",
+    time: 300,
+    hpMultiplier: 1,
+    scaleMultiplier: 1,
+    color: 0xb7b1a3
+  },
+  {
+    id: "bone_knight_captain",
+    enemyId: "bone_knight",
+    name: "Bone Knight Captain",
+    time: 570,
+    hpMultiplier: 1.75,
+    scaleMultiplier: 1.22,
+    color: 0xd1c07d
+  }
+];
+
 export function getSpawnBudgetPerSecond(timeElapsed: number): number {
   if (timeElapsed <= BUDGET_CURVE[0].time) {
     return BUDGET_CURVE[0].budget;
@@ -38,6 +69,14 @@ export function getAllowedEnemies(timeElapsed: number): EnemyDefinition[] {
   return ENEMY_DEFINITIONS.filter(
     (enemy) => enemy.firstAppearsAt <= timeElapsed && Number.isFinite(enemy.spawnCost)
   );
+}
+
+export function getScriptedEnemySpawns(previousTime: number, currentTime: number): ScriptedEnemySpawn[] {
+  if (currentTime <= previousTime) {
+    return [];
+  }
+
+  return SCRIPTED_ENEMY_SPAWNS.filter((spawn) => previousTime < spawn.time && spawn.time <= currentTime);
 }
 
 export function pickEnemyForBudget(

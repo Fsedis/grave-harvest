@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   estimateEarlyGamePacing,
   getAllowedEnemies,
+  getScriptedEnemySpawns,
   getSpawnBudgetPerSecond,
   pickEnemyForBudget
 } from "./spawnDirector";
@@ -28,7 +29,12 @@ describe("getAllowedEnemies", () => {
       "rot_walker"
     ]);
     expect(getAllowedEnemies(120).map((enemy) => enemy.id)).not.toContain("ghost");
-    expect(getAllowedEnemies(150).map((enemy) => enemy.id)).toContain("ghost");
+  });
+
+  it("adds Ghost at the four minute mark and keeps Bone Knight scripted-only", () => {
+    expect(getAllowedEnemies(239).map((enemy) => enemy.id)).not.toContain("ghost");
+    expect(getAllowedEnemies(240).map((enemy) => enemy.id)).toContain("ghost");
+    expect(getAllowedEnemies(600).map((enemy) => enemy.id)).not.toContain("bone_knight");
   });
 });
 
@@ -52,5 +58,20 @@ describe("estimateEarlyGamePacing", () => {
 
   it("targets at least two level-ups by two minutes", () => {
     expect(estimateEarlyGamePacing(120).levelUps).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("getScriptedEnemySpawns", () => {
+  it("emits the first Bone Knight when its time is crossed", () => {
+    expect(getScriptedEnemySpawns(299.9, 300).map((spawn) => spawn.id)).toEqual(["bone_knight_elite"]);
+  });
+
+  it("emits the final captain at 9:30 without duplicating past events", () => {
+    const captain = getScriptedEnemySpawns(569.9, 570)[0];
+
+    expect(captain.id).toBe("bone_knight_captain");
+    expect(captain.enemyId).toBe("bone_knight");
+    expect(captain.hpMultiplier).toBeGreaterThan(1);
+    expect(getScriptedEnemySpawns(570, 570.5)).toEqual([]);
   });
 });

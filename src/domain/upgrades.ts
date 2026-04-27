@@ -376,8 +376,15 @@ export function selectUpgradeOptions(
   const options: UpgradeDefinition[] = [];
 
   while (pool.length > 0 && options.length < count) {
-    const index = Math.min(pool.length - 1, Math.floor(rng() * pool.length));
-    const [upgrade] = pool.splice(index, 1);
+    const rarity = pickUpgradeRarity(rng());
+    const rarityPool = pool.filter((upgrade) => upgrade.rarity === rarity);
+    const sourcePool = rarityPool.length > 0 ? rarityPool : pool;
+    const index = Math.min(sourcePool.length - 1, Math.floor(rng() * sourcePool.length));
+    const upgrade = sourcePool[index];
+    pool.splice(
+      pool.findIndex((candidate) => candidate.id === upgrade.id),
+      1
+    );
     options.push(upgrade);
   }
 
@@ -390,6 +397,18 @@ export function selectUpgradeOptions(
   }
 
   return options;
+}
+
+export function pickUpgradeRarity(roll: number): Rarity {
+  if (roll < 0.7) {
+    return "common";
+  }
+
+  if (roll < 0.95) {
+    return "uncommon";
+  }
+
+  return "rare";
 }
 
 export function applyUpgrade(state: UpgradeState, upgradeId: string): void {

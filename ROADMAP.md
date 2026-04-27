@@ -10,14 +10,17 @@
 - Движение игрока по арене.
 - Skeleton spawn director, движение врагов к игроку и контактный урон.
 - Bone Knives с автоматическим таргетингом.
+- Все 4 MVP-оружия: Bone Knives, Holy Candle, Grave Bell, Crow Swarm.
+- Все 5 MVP-врагов в забеге: Skeleton, Grave Rat, Rot Walker, Ghost, Bone Knight.
+- Scripted Bone Knight на 5:00 и Bone Knight Captain на 9:30.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
-- Базовые run-upgrades.
+- Базовые run-upgrades и weapon-specific upgrades.
+- Basic rarity weighting для карт: common, uncommon, rare.
 - Чистая доменная логика с тестами.
 
 Ограничения версии:
 - Нет полного 10-минутного режима.
-- Нет всех MVP-оружий и всех врагов в геймплее.
-- Нет victory, босса, мета-прогрессии, настроек, звуков и финального juice.
+- Нет victory, boss HP bar, мета-прогрессии, настроек, звуков и финального juice.
 - Визуал намеренно серый и прототипный.
 
 ## Принципы разработки
@@ -54,12 +57,12 @@ Definition of Done:
 - [x] Реализовать Holy Candle.
 - [x] Реализовать Grave Bell.
 - [x] Реализовать Crow Swarm.
-- [ ] Добавить Ghost с волнообразным движением.
-- [ ] Добавить Bone Knight как элиту.
-- [ ] Добавить Bone Knight Captain на 9:30.
+- [x] Добавить Ghost с волнообразным движением.
+- [x] Добавить Bone Knight как элиту.
+- [x] Добавить Bone Knight Captain на 9:30.
 - [x] Добавить weapon-specific upgrades.
 - [x] Довести список run-upgrades минимум до 20 карт.
-- [ ] Добавить basic rarity weighting: common, uncommon, rare.
+- [x] Добавить basic rarity weighting: common, uncommon, rare.
 
 Definition of Done:
 - Игрок может иметь до 4 оружий.
@@ -145,14 +148,14 @@ Definition of Done:
 
 ## Ближайший фокус
 
-Следующий рабочий срез: Playable Vertical Slice.
+Следующий рабочий срез: Full Night Mode.
 
 Порядок задач:
-1. Улучшить поведение и читаемость врагов.
-2. Добавить Grave Rat и Rot Walker в реальный спавн.
-3. Настроить первые 2 минуты темпа.
-4. Добавить базовый juice убийств и pickup.
-5. Проверить, что первый level-up случается достаточно рано.
+1. Добавить victory condition на 10:00.
+2. Добавить victory screen.
+3. Настроить 10-минутную budget curve.
+4. Добавить boss HP bar для Bone Knight / Captain.
+5. Проверить death/victory/retry loop на нескольких забегах.
 
 ## После MVP
 
