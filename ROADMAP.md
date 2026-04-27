@@ -19,6 +19,7 @@
 - Damage numbers с лимитом, low HP warning и level-up flash.
 - Видимый UI переведён на русский.
 - Crow Swarm преследует цель и ретаргетится, если цель умерла.
+- Особые weapon-upgrades работают как боевые эффекты: второй удар колокола, ожог свечи и кровотечение ворон.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
 - Базовые run-upgrades и weapon-specific upgrades.
 - Basic rarity weighting для карт: common, uncommon, rare.
@@ -68,6 +69,7 @@ Definition of Done:
 - [x] Добавить Bone Knight как элиту.
 - [x] Добавить Bone Knight Captain на 10:00.
 - [x] Добавить weapon-specific upgrades.
+- [x] Подключить особые weapon-upgrades к реальным боевым эффектам.
 - [x] Довести список run-upgrades минимум до 20 карт.
 - [x] Добавить basic rarity weighting: common, uncommon, rare.
 

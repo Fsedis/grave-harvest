@@ -18,6 +18,13 @@ import {
 import { selectHomingTarget, type HomingTargetCandidate } from "../domain/homing";
 import { hasWonNight } from "../domain/runRules";
 import {
+  consumeTimedDamageTicks,
+  createTimedDamageEffect,
+  getBellPulseSpecs,
+  type BellPulseSpec,
+  type TimedDamageEffect
+} from "../domain/weaponEffects";
+import {
   applyUpgrade,
   createInitialUpgradeState,
   getDerivedWeaponStats,
@@ -41,6 +48,8 @@ type RunStatus = "menu" | "playing" | "paused" | "level_up" | "game_over" | "vic
 
 type EnemySprite = Phaser.Physics.Arcade.Image & {
   runtimeId: number;
+  burnEffect: TimedDamageEffect | null;
+  bleedEffect: TimedDamageEffect | null;
   def: EnemyDefinition;
   hp: number;
   maxHp: number;
@@ -63,6 +72,7 @@ type ProjectileSprite = Phaser.Physics.Arcade.Image & {
   pierce: number;
   isCrit: boolean;
   damageTextColor: number;
+  appliesBleed: boolean;
   kind: "knife" | "crow";
   targetEnemyId: number | null;
   homingSpeed: number;
@@ -73,6 +83,11 @@ type DamageFeedbackOptions = {
   important?: boolean;
   color?: number;
   showNumber?: boolean;
+};
+
+type PendingBellPulse = {
+  fireAt: number;
+  pulse: BellPulseSpec;
 };
 
 type PickupSprite = Phaser.Physics.Arcade.Image & {
@@ -124,6 +139,7 @@ export class RunScene extends Phaser.Scene {
   private lowHpEdges: Phaser.GameObjects.Rectangle[] = [];
   private damageNumberTexts: Phaser.GameObjects.Text[] = [];
   private nextEnemyRuntimeId = 1;
+  private pendingBellPulses: PendingBellPulse[] = [];
   private activeFinalBoss: EnemySprite | null = null;
 
   constructor() {
@@ -157,7 +173,15 @@ export class RunScene extends Phaser.Scene {
     if (this.status !== "playing") {
       return;
     }
+    this.updateEnemyStatusEffects();
+    if (this.status !== "playing") {
+      return;
+    }
     this.updateWeapons(dt);
+    if (this.status !== "playing") {
+      return;
+    }
+    this.updatePendingBellPulses();
     if (this.status !== "playing") {
       return;
     }
@@ -565,6 +589,8 @@ export class RunScene extends Phaser.Scene {
     const display = getEnemyDisplaySize(definition);
     enemy.runtimeId = this.nextEnemyRuntimeId;
     this.nextEnemyRuntimeId += 1;
+    enemy.burnEffect = null;
+    enemy.bleedEffect = null;
     enemy.def = definition;
     enemy.hp = Math.round(definition.hp * (scripted?.hpMultiplier ?? 1));
     enemy.maxHp = enemy.hp;
@@ -708,6 +734,83 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
+  private updatePendingBellPulses(): void {
+    if (this.pendingBellPulses.length === 0) {
+      return;
+    }
+
+    const stillPending: PendingBellPulse[] = [];
+
+    for (const pendingPulse of this.pendingBellPulses) {
+      if (pendingPulse.fireAt <= this.run.timeElapsed) {
+        this.applyBellPulse(pendingPulse.pulse);
+        if (this.status !== "playing") {
+          break;
+        }
+      } else {
+        stillPending.push(pendingPulse);
+      }
+    }
+
+    this.pendingBellPulses = stillPending;
+  }
+
+  private updateEnemyStatusEffects(): void {
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as EnemySprite;
+
+      if (!enemy.active) {
+        continue;
+      }
+
+      this.tickEnemyTimedDamage(enemy, "burn", 0xf7944d);
+      if (enemy.active) {
+        this.tickEnemyTimedDamage(enemy, "bleed", 0xc43a3a);
+      }
+    }
+  }
+
+  private tickEnemyTimedDamage(
+    enemy: EnemySprite,
+    effectType: "burn" | "bleed",
+    color: number
+  ): void {
+    const field = effectType === "burn" ? "burnEffect" : "bleedEffect";
+    const effect = enemy[field];
+
+    if (!effect) {
+      return;
+    }
+
+    const result = consumeTimedDamageTicks(effect, this.run.timeElapsed);
+    enemy[field] = result.active ? result.effect : null;
+
+    for (let tick = 0; tick < result.ticks && enemy.active; tick += 1) {
+      this.damageEnemy(enemy, effect.damagePerTick, {
+        important: enemy.isElite,
+        color
+      });
+      if (enemy.active) {
+        this.createBurst(enemy.x, enemy.y, color, 2, 10, 120);
+      }
+    }
+  }
+
+  private applyTimedDamageEffect(
+    enemy: EnemySprite,
+    effectType: "burn" | "bleed",
+    damagePerTick: number
+  ): void {
+    const field = effectType === "burn" ? "burnEffect" : "bleedEffect";
+    enemy[field] = createTimedDamageEffect({
+      currentTime: this.run.timeElapsed,
+      damagePerTick,
+      duration: 2,
+      tickInterval: 0.5
+    });
+    this.createBurst(enemy.x, enemy.y, effectType === "burn" ? 0xf7944d : 0xc43a3a, 2, 10, 120);
+  }
+
   private fireBoneKnives(stats: DerivedWeaponStats): void {
     for (let index = 0; index < stats.projectileCount; index += 1) {
       const target = this.findNearestEnemy(stats.range);
@@ -786,6 +889,7 @@ export class RunScene extends Phaser.Scene {
     projectile.pierce = 0;
     projectile.isCrit = crit;
     projectile.damageTextColor = crit ? 0xf2d36b : 0xf3ead0;
+    projectile.appliesBleed = false;
     projectile.kind = "knife";
     projectile.targetEnemyId = null;
     projectile.homingSpeed = 0;
@@ -818,33 +922,33 @@ export class RunScene extends Phaser.Scene {
         });
 
         if (stats.burn && enemy.active) {
-          this.damageEnemy(enemy, Math.max(1, Math.round(stats.damage * 0.35)), {
-            color: 0xf7944d,
-            showNumber: false
-          });
-          this.createBurst(enemy.x, enemy.y, 0xf7944d, 2, 10, 110);
+          this.applyTimedDamageEffect(enemy, "burn", Math.max(1, Math.round(stats.damage * 0.35)));
         }
       }
     }
   }
 
   private ringGraveBell(stats: DerivedWeaponStats): void {
-    for (let pulse = 0; pulse < stats.pulseCount; pulse += 1) {
-      const delay = pulse * 180;
+    getBellPulseSpecs({
+      damage: stats.damage,
+      pulseCount: stats.pulseCount,
+      radius: stats.radius
+    }).forEach((pulse) => {
+      if (pulse.delayMs === 0) {
+        this.applyBellPulse(pulse);
+        return;
+      }
 
-      this.time.delayedCall(delay, () => {
-        if (this.status === "playing") {
-          this.applyBellPulse(stats, pulse);
-        }
+      this.pendingBellPulses.push({
+        fireAt: this.run.timeElapsed + pulse.delayMs / 1000,
+        pulse
       });
-    }
+    });
   }
 
-  private applyBellPulse(stats: DerivedWeaponStats, pulseIndex: number): void {
-    const radius = stats.radius * (pulseIndex === 0 ? 1 : 0.82);
-    const damage = Math.max(1, Math.round(stats.damage * (pulseIndex === 0 ? 1 : 0.65)));
-    this.createDamageRadiusRing(this.player.x, this.player.y, 0xcdbb8d, radius);
-    this.cameras.main.shake(80, 0.003);
+  private applyBellPulse(pulse: BellPulseSpec): void {
+    this.createDamageRadiusRing(this.player.x, this.player.y, 0xcdbb8d, pulse.radius);
+    this.cameras.main.shake(pulse.index === 0 ? 80 : 110, pulse.index === 0 ? 0.003 : 0.004);
 
     for (const child of this.enemies.getChildren()) {
       const enemy = child as EnemySprite;
@@ -855,14 +959,14 @@ export class RunScene extends Phaser.Scene {
 
       const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
 
-      if (distance <= radius) {
-        this.damageEnemy(enemy, damage, {
-          important: enemy.isElite,
+      if (distance <= pulse.radius) {
+        this.damageEnemy(enemy, pulse.damage, {
+          important: enemy.isElite || pulse.index > 0,
           color: 0xcdbb8d
         });
 
         if (enemy.active && distance > 0) {
-          const knockback = 42 * (1 - enemy.def.knockbackResistance);
+          const knockback = (pulse.index === 0 ? 42 : 58) * (1 - enemy.def.knockbackResistance);
           enemy.x += ((enemy.x - this.player.x) / distance) * knockback;
           enemy.y += ((enemy.y - this.player.y) / distance) * knockback;
         }
@@ -896,9 +1000,10 @@ export class RunScene extends Phaser.Scene {
     projectile.damage = Math.round(stats.damage);
     projectile.range = stats.range * 1.7;
     projectile.traveled = 0;
-    projectile.pierce = stats.bleed ? 1 : 0;
+    projectile.pierce = 0;
     projectile.isCrit = false;
     projectile.damageTextColor = 0xf3ead0;
+    projectile.appliesBleed = stats.bleed;
     projectile.kind = "crow";
     projectile.targetEnemyId = target.runtimeId;
     projectile.homingSpeed = 540;
@@ -952,6 +1057,9 @@ export class RunScene extends Phaser.Scene {
             important: projectile.isCrit || enemy.isElite,
             color: projectile.damageTextColor
           });
+          if (enemy.active && projectile.appliesBleed) {
+            this.applyTimedDamageEffect(enemy, "bleed", Math.max(1, Math.round(projectile.damage * 0.25)));
+          }
           if (projectile.pierce > 0) {
             projectile.pierce -= 1;
             projectile.damage = Math.max(1, Math.round(projectile.damage * 0.5));
@@ -1378,6 +1486,7 @@ export class RunScene extends Phaser.Scene {
     this.projectiles.clear(true, true);
     this.pickups.clear(true, true);
     this.clearDamageNumbers();
+    this.pendingBellPulses = [];
     this.activeFinalBoss = null;
   }
 

@@ -106,35 +106,41 @@ describe("getDerivedWeaponStats", () => {
     applyUpgrade(state, "unlock_candle");
     applyUpgrade(state, "candle_area");
     applyUpgrade(state, "candle_damage");
+    applyUpgrade(state, "candle_burn");
 
     const stats = getDerivedWeaponStats(state, "holy_candle");
 
     expect(stats.radius).toBeCloseTo(132);
     expect(stats.damage).toBeCloseTo(4.8);
+    expect(stats.burn).toBe(true);
   });
 
-  it("applies bell cooldown and second pulse upgrades", () => {
+  it("applies bell cooldown, radius and second pulse upgrades", () => {
     const state = createInitialUpgradeState();
     applyUpgrade(state, "unlock_bell");
     applyUpgrade(state, "bell_cooldown");
+    applyUpgrade(state, "bell_area");
     applyUpgrade(state, "bell_double_pulse");
 
     const stats = getDerivedWeaponStats(state, "grave_bell");
 
     expect(stats.cooldown).toBeCloseTo(3.2);
+    expect(stats.radius).toBeCloseTo(225);
     expect(stats.pulseCount).toBe(2);
   });
 
-  it("applies extra crow and crow damage upgrades", () => {
+  it("applies extra crow, crow damage and bleed upgrades", () => {
     const state = createInitialUpgradeState();
     applyUpgrade(state, "unlock_crows");
     applyUpgrade(state, "crow_extra");
     applyUpgrade(state, "crow_damage");
+    applyUpgrade(state, "crow_bleed");
 
     const stats = getDerivedWeaponStats(state, "crow_swarm");
 
     expect(stats.projectileCount).toBe(2);
     expect(stats.damage).toBeCloseTo(14.4);
+    expect(stats.bleed).toBe(true);
   });
 });
 
