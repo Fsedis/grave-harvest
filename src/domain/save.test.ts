@@ -3,7 +3,9 @@ import {
   SAVE_KEY,
   createDefaultSettings,
   createDefaultSaveData,
+  createDefaultTutorialState,
   loadSave,
+  markFirstRunHintsSeen,
   persistSave,
   resetSave,
   updateSettings,
@@ -33,6 +35,12 @@ describe("save system", () => {
     });
   });
 
+  it("includes unseen first-run hints in default save data", () => {
+    expect(createDefaultSaveData().tutorial).toEqual({
+      firstRunHintsSeen: false
+    });
+  });
+
   it("loads old saves without settings using default settings", () => {
     const storage = createMemoryStorage();
     storage.setItem(
@@ -58,6 +66,7 @@ describe("save system", () => {
     );
 
     expect(loadSave(storage).settings).toEqual(createDefaultSettings());
+    expect(loadSave(storage).tutorial).toEqual(createDefaultTutorialState());
   });
 
   it("normalizes corrupt settings to defaults", () => {
@@ -77,6 +86,21 @@ describe("save system", () => {
     );
 
     expect(loadSave(storage).settings).toEqual(createDefaultSettings());
+  });
+
+  it("normalizes corrupt tutorial state to defaults", () => {
+    const storage = createMemoryStorage();
+    storage.setItem(
+      SAVE_KEY,
+      JSON.stringify({
+        ...createDefaultSaveData(),
+        tutorial: {
+          firstRunHintsSeen: "yes"
+        }
+      })
+    );
+
+    expect(loadSave(storage).tutorial).toEqual(createDefaultTutorialState());
   });
 
   it("clamps numeric volume settings to the valid range", () => {
@@ -167,6 +191,15 @@ describe("save system", () => {
       musicVolume: 0.9
     });
     expect(save.settings).toEqual(createDefaultSettings());
+  });
+
+  it("marks first-run hints as seen without mutating the source save", () => {
+    const save = createDefaultSaveData();
+    const updated = markFirstRunHintsSeen(save);
+
+    expect(updated.tutorial).toEqual({ firstRunHintsSeen: true });
+    expect(save.tutorial).toEqual(createDefaultTutorialState());
+    expect(updated).not.toBe(save);
   });
 });
 

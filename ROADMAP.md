@@ -19,6 +19,7 @@
 - Damage numbers с лимитом, low HP warning и level-up flash.
 - Settings screen с сохранёнными переключателями тряски экрана и чисел урона.
 - WebAudio SFX, level-up sting и run-only ambient loop с настройками громкости.
+- Улучшенный pause screen, first-run hints и более читаемая кладбищенская арена.
 - Видимый UI переведён на русский.
 - Crow Swarm преследует цель и ретаргетится, если цель умерла.
 - Особые weapon-upgrades работают как боевые эффекты: второй удар колокола, ожог свечи и кровотечение ворон.
@@ -136,10 +137,10 @@ Definition of Done:
 - [x] Добавить level-up sting.
 - [x] Добавить SFX для shot, hit, death, pickup, level-up, player hit.
 - [x] Добавить простую ambient/music loop.
-- [ ] Улучшить pause screen.
+- [x] Улучшить pause screen.
 - [x] Добавить settings screen.
-- [ ] Улучшить визуальную читаемость арены.
-- [ ] Добавить короткие first-run hints.
+- [x] Улучшить визуальную читаемость арены.
+- [x] Добавить короткие first-run hints.
 
 Definition of Done:
 - Убийства, pickup и level-up дают явный feedback.
@@ -165,14 +166,14 @@ Definition of Done:
 
 ## Ближайший фокус
 
-Следующий рабочий срез: Pause + First-Run UX.
+Следующий рабочий срез: MVP Balance And Release.
 
 Порядок задач:
-1. Улучшить pause screen.
-2. Добавить короткие first-run hints.
-3. Улучшить визуальную читаемость арены.
-4. Пройти первый балансный full-run после звукового feedback.
-5. После ручного full-run перейти к MVP Balance And Release.
+1. Настроить целевую длительность первого проигрыша: 4-7 минут.
+2. Настроить хороший 10-минутный забег: 800-1200 kills, level 23-28.
+3. Проверить FPS при 180 активных врагах.
+4. Проверить death/victory/retry loop на 3-5 забегах подряд.
+5. Добавить README и release checklist.
 
 ## После MVP
 

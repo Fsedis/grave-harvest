@@ -38,6 +38,7 @@ import {
 import {
   createDefaultSaveData,
   loadSave,
+  markFirstRunHintsSeen,
   persistSave,
   resetSave,
   updateSettings,
@@ -71,6 +72,11 @@ const HARD_PICKUP_CAP = 400;
 const PLAYER_INVULNERABILITY_SECONDS = 0.35;
 const ENEMY_SEPARATION_STRENGTH = 0.92;
 const ENEMY_SEPARATION_NEIGHBORS = 8;
+const FIRST_RUN_HINTS = [
+  "Двигайся WASD или стрелками. Остановиться на кладбище — плохая идея.",
+  "Атаки автоматические. Держи дистанцию и веди толпу за собой.",
+  "Собирай голубые души: они дают уровни и новые проклятия."
+];
 
 type RunStatus =
   | "menu"
@@ -177,6 +183,8 @@ export class RunScene extends Phaser.Scene {
   private bossHpText!: Phaser.GameObjects.Text;
   private lowHpEdges: Phaser.GameObjects.Rectangle[] = [];
   private damageNumberTexts: Phaser.GameObjects.Text[] = [];
+  private hintObjects: Phaser.GameObjects.GameObject[] = [];
+  private hintTimers: Phaser.Time.TimerEvent[] = [];
   private nextEnemyRuntimeId = 1;
   private pendingBellPulses: PendingBellPulse[] = [];
   private activeFinalBoss: EnemySprite | null = null;
@@ -403,27 +411,110 @@ export class RunScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
     this.cameras.main.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
 
-    this.add.rectangle(MAP_SIZE / 2, MAP_SIZE / 2, MAP_SIZE, MAP_SIZE, 0x151a16).setDepth(-20);
+    this.add.rectangle(MAP_SIZE / 2, MAP_SIZE / 2, MAP_SIZE, MAP_SIZE, 0x121711).setDepth(-30);
+
+    const ground = this.add.graphics().setDepth(-25);
+    ground.fillStyle(0x171d15, 1);
+    ground.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+    ground.fillStyle(0x202018, 0.45);
+    for (let index = 0; index < 42; index += 1) {
+      const x = 70 + ((index * 211) % (MAP_SIZE - 140));
+      const y = 80 + ((index * 157) % (MAP_SIZE - 160));
+      ground.fillEllipse(x, y, 210 + (index % 5) * 34, 90 + (index % 4) * 22);
+    }
+    ground.fillStyle(0x0e130f, 0.26);
+    for (let index = 0; index < 34; index += 1) {
+      const x = 120 + ((index * 277) % (MAP_SIZE - 240));
+      const y = 120 + ((index * 193) % (MAP_SIZE - 240));
+      ground.fillEllipse(x, y, 140 + (index % 4) * 28, 60 + (index % 3) * 18);
+    }
+
+    const paths = this.add.graphics().setDepth(-22);
+    paths.fillStyle(0x27231c, 0.72);
+    paths.fillRoundedRect(170, MAP_SIZE / 2 - 70, MAP_SIZE - 340, 140, 58);
+    paths.fillRoundedRect(MAP_SIZE / 2 - 78, 190, 156, MAP_SIZE - 380, 62);
+    paths.fillStyle(0x3a3024, 0.28);
+    for (let index = 0; index < 38; index += 1) {
+      const x = 220 + ((index * 149) % (MAP_SIZE - 440));
+      const y = MAP_SIZE / 2 - 42 + ((index * 37) % 84);
+      paths.fillEllipse(x, y, 34, 14);
+    }
+    for (let index = 0; index < 34; index += 1) {
+      const x = MAP_SIZE / 2 - 48 + ((index * 41) % 96);
+      const y = 230 + ((index * 137) % (MAP_SIZE - 460));
+      paths.fillEllipse(x, y, 28, 16);
+    }
 
     const grid = this.add.graphics().setDepth(-10);
-    grid.lineStyle(1, 0x263025, 0.35);
+    grid.lineStyle(1, 0x2a3329, 0.18);
     for (let position = 0; position <= MAP_SIZE; position += 120) {
       grid.lineBetween(position, 0, position, MAP_SIZE);
       grid.lineBetween(0, position, MAP_SIZE, position);
     }
 
     const decor = this.add.graphics().setDepth(-5);
-    decor.fillStyle(0x30362e, 1);
-    for (let index = 0; index < 46; index += 1) {
+    for (let index = 0; index < 68; index += 1) {
       const x = 120 + ((index * 173) % (MAP_SIZE - 240));
       const y = 120 + ((index * 251) % (MAP_SIZE - 240));
-      decor.fillRoundedRect(x, y, 22, 36, 3);
-      decor.fillRect(x + 7, y - 8, 8, 12);
+      const variant = index % 4;
+      decor.fillStyle(0x070908, 0.36);
+      decor.fillEllipse(x + 13, y + 28, 44, 18);
+
+      if (variant === 0) {
+        decor.fillStyle(0x32382f, 1);
+        decor.fillRoundedRect(x, y, 24, 38, 4);
+        decor.fillStyle(0x1f251f, 0.8);
+        decor.fillRect(x + 5, y + 9, 14, 3);
+      } else if (variant === 1) {
+        decor.fillStyle(0x3a3b34, 1);
+        decor.fillRoundedRect(x - 2, y + 4, 28, 30, 3);
+        decor.fillRect(x + 8, y - 8, 8, 14);
+        decor.fillRect(x + 2, y - 2, 20, 6);
+      } else if (variant === 2) {
+        decor.fillStyle(0x272e28, 1);
+        decor.fillRoundedRect(x - 4, y + 10, 34, 18, 5);
+        decor.fillStyle(0x111611, 0.5);
+        decor.fillRect(x, y + 16, 26, 3);
+      } else {
+        decor.fillStyle(0x30352f, 1);
+        decor.fillRoundedRect(x + 2, y + 2, 20, 34, 10);
+        decor.fillStyle(0x485044, 0.75);
+        decor.fillCircle(x + 12, y + 11, 4);
+      }
+    }
+
+    const trees = this.add.graphics().setDepth(-6);
+    for (let index = 0; index < 18; index += 1) {
+      const x = 160 + ((index * 307) % (MAP_SIZE - 320));
+      const y = 170 + ((index * 419) % (MAP_SIZE - 340));
+      trees.lineStyle(5, 0x1c1814, 0.9);
+      trees.lineBetween(x, y, x + 8, y - 42);
+      trees.lineStyle(3, 0x1c1814, 0.82);
+      trees.lineBetween(x + 5, y - 28, x - 15, y - 52);
+      trees.lineBetween(x + 7, y - 32, x + 28, y - 58);
+      trees.fillStyle(0x080a08, 0.32);
+      trees.fillEllipse(x + 8, y + 3, 46, 16);
     }
 
     const border = this.add.graphics().setDepth(-4);
-    border.lineStyle(16, 0x3b332d, 1);
+    border.lineStyle(22, 0x2e271f, 1);
     border.strokeRect(8, 8, MAP_SIZE - 16, MAP_SIZE - 16);
+    border.lineStyle(4, 0x514334, 0.9);
+    border.strokeRect(28, 28, MAP_SIZE - 56, MAP_SIZE - 56);
+    border.fillStyle(0x1c1712, 1);
+    for (let position = 64; position < MAP_SIZE - 64; position += 96) {
+      border.fillRect(position, 4, 12, 40);
+      border.fillRect(position, MAP_SIZE - 44, 12, 40);
+      border.fillRect(4, position, 40, 12);
+      border.fillRect(MAP_SIZE - 44, position, 40, 12);
+    }
+
+    const fog = this.add.graphics().setDepth(-3);
+    fog.fillStyle(0x9aa091, 0.06);
+    fog.fillRect(0, 0, MAP_SIZE, 90);
+    fog.fillRect(0, MAP_SIZE - 90, MAP_SIZE, 90);
+    fog.fillRect(0, 0, 90, MAP_SIZE);
+    fog.fillRect(MAP_SIZE - 90, 0, 90, MAP_SIZE);
   }
 
   private createGroups(): void {
@@ -570,6 +661,7 @@ export class RunScene extends Phaser.Scene {
     this.setHudVisible(true);
     this.layoutHud();
     this.startRunAudio();
+    this.showFirstRunHintsIfNeeded();
   }
 
   private pauseRun(): void {
@@ -596,6 +688,78 @@ export class RunScene extends Phaser.Scene {
           this.audio.startRunMusic();
         }
       });
+  }
+
+  private showFirstRunHintsIfNeeded(): void {
+    if (this.saveData.tutorial.firstRunHintsSeen) {
+      return;
+    }
+
+    this.saveData = markFirstRunHintsSeen(this.saveData);
+    this.persistSaveData();
+
+    FIRST_RUN_HINTS.forEach((message, index) => {
+      const timer = this.time.delayedCall(850 + index * 4100, () => {
+        if (this.status === "playing") {
+          this.showGameplayHint(message);
+        }
+      });
+      this.hintTimers.push(timer);
+    });
+  }
+
+  private showGameplayHint(message: string): void {
+    this.clearHintObjects();
+
+    const { width, height } = this.scale;
+    const compact = width < 760;
+    const boxWidth = Math.min(width - 48, compact ? 430 : 560);
+    const boxHeight = compact ? 58 : 54;
+    const x = width / 2;
+    const y = height - (compact ? 104 : 96);
+    const back = this.add
+      .rectangle(x, y, boxWidth, boxHeight, 0x111612, 0.94)
+      .setStrokeStyle(1, 0xc9b46a, 0.8)
+      .setScrollFactor(0)
+      .setDepth(1500);
+    const text = this.add
+      .text(x, y, message, {
+        fontFamily: "Inter, Arial, sans-serif",
+        fontSize: compact ? "15px" : "17px",
+        fontStyle: "700",
+        color: "#f4ead7",
+        align: "center",
+        wordWrap: { width: boxWidth - 36 }
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1501);
+
+    this.hintObjects.push(back, text);
+    this.tweens.add({
+      targets: this.hintObjects,
+      alpha: { from: 0, to: 1 },
+      y: y - 8,
+      duration: 180,
+      ease: "Quad.easeOut"
+    });
+
+    const hideTimer = this.time.delayedCall(3200, () => this.fadeOutHints());
+    this.hintTimers.push(hideTimer);
+  }
+
+  private fadeOutHints(): void {
+    if (this.hintObjects.length === 0) {
+      return;
+    }
+
+    this.tweens.add({
+      targets: this.hintObjects,
+      alpha: 0,
+      duration: 220,
+      ease: "Quad.easeOut",
+      onComplete: () => this.clearHintObjects()
+    });
   }
 
   private updatePlayerMovement(): void {
@@ -1638,6 +1802,7 @@ export class RunScene extends Phaser.Scene {
     this.audio.stopRunMusic();
     this.audio.playSfx("death");
     this.clearDamageNumbers();
+    this.clearHints();
     this.setLowHpWarningVisible(false);
     this.activeFinalBoss = null;
     this.layoutHud();
@@ -1652,6 +1817,7 @@ export class RunScene extends Phaser.Scene {
     this.audio.stopRunMusic();
     this.audio.playSfx("victory");
     this.clearDamageNumbers();
+    this.clearHints();
     this.setLowHpWarningVisible(false);
     this.activeFinalBoss = null;
     this.layoutHud();
@@ -1685,6 +1851,7 @@ export class RunScene extends Phaser.Scene {
     this.projectiles.clear(true, true);
     this.pickups.clear(true, true);
     this.clearDamageNumbers();
+    this.clearHints();
     this.pendingBellPulses = [];
     this.activeFinalBoss = null;
   }
@@ -1695,6 +1862,7 @@ export class RunScene extends Phaser.Scene {
     this.audio.stopRunMusic();
     this.setHudVisible(false);
     this.clearDamageNumbers();
+    this.clearHints();
     this.clearOverlay();
 
     const { width, height } = this.scale;
@@ -1735,12 +1903,65 @@ export class RunScene extends Phaser.Scene {
     this.setHudVisible(true);
     this.clearOverlay();
     const { width, height } = this.scale;
+    const panelWidth = Math.min(width - 48, 780);
+    const panelHeight = Math.min(height - 56, 500);
+    const panelX = width / 2;
+    const panelY = height / 2;
+    const leftX = panelX - panelWidth / 2 + 34;
+    const topY = panelY - panelHeight / 2 + 38;
+    const compact = width < 760;
+    const activeWeapons = this.run.upgrades.weapons.map(formatWeaponName).join(", ");
+
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x0b0e0c, 0.58);
-    this.addOverlayText(width / 2, height / 2 - 124, "Пауза", 42, "#f4ead7", "700").setOrigin(0.5);
-    this.addOverlayButton(width / 2, height / 2 - 52, 190, 48, "Продолжить", () => this.resumeRun());
-    this.addOverlayButton(width / 2, height / 2 + 8, 190, 48, "Настройки", () => this.showSettingsOverlay("pause"));
-    this.addOverlayButton(width / 2, height / 2 + 68, 190, 48, "Заново", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 128, 190, 48, "Главное меню", () => this.showMainMenu());
+    const panel = this.addOverlayRectangle(panelX, panelY, panelWidth, panelHeight, 0x111612, 0.96);
+    panel.setStrokeStyle(2, 0x4d5a43, 0.95);
+    this.addOverlayText(panelX, topY, "Пауза", compact ? 34 : 42, "#f4ead7", "700").setOrigin(0.5);
+
+    this.addOverlayText(
+      leftX,
+      topY + 54,
+      `Время ${formatTimer(this.run.timeElapsed)}   Уровень ${this.run.level}   Убийства ${this.run.kills}   Кости ${this.run.bonesCollected}`,
+      compact ? 16 : 18,
+      "#e5d39f",
+      "700"
+    )
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(panelWidth - 68);
+    this.addOverlayText(leftX, topY + 88, `Оружие: ${activeWeapons}`, compact ? 15 : 16, "#d9cfba")
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(panelWidth - 68);
+
+    const helpY = topY + (compact ? 128 : 138);
+    this.addOverlayText(leftX, helpY, "Краткая справка", 20, "#f4ead7", "700")
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(panelWidth - 68);
+    [
+      "WASD / стрелки — движение.",
+      "Оружие атакует автоматически: управляй позицией, не прицелом.",
+      "Голубые души дают опыт и выбор проклятий.",
+      "На level-up выбирай карту мышью или клавишами 1 / 2 / 3.",
+      "Цель: пережить ночь и убить Капитана после 10:00."
+    ].forEach((line, index) => {
+      this.addOverlayText(leftX, helpY + 32 + index * 24, line, compact ? 14 : 16, "#cfc4b0")
+        .setOrigin(0, 0.5)
+        .setWordWrapWidth(panelWidth - 68);
+    });
+
+    const buttonY = panelY + panelHeight / 2 - 48;
+    const buttonGap = compact ? 12 : 16;
+    const buttonWidth = compact ? 154 : 170;
+    const totalButtonWidth = buttonWidth * 4 + buttonGap * 3;
+    const firstButtonX = panelX - totalButtonWidth / 2 + buttonWidth / 2;
+    this.addOverlayButton(firstButtonX, buttonY, buttonWidth, 44, "Продолжить", () => this.resumeRun());
+    this.addOverlayButton(firstButtonX + (buttonWidth + buttonGap), buttonY, buttonWidth, 44, "Настройки", () =>
+      this.showSettingsOverlay("pause")
+    );
+    this.addOverlayButton(firstButtonX + (buttonWidth + buttonGap) * 2, buttonY, buttonWidth, 44, "Заново", () =>
+      this.startRun()
+    );
+    this.addOverlayButton(firstButtonX + (buttonWidth + buttonGap) * 3, buttonY, buttonWidth, 44, "Главное меню", () =>
+      this.showMainMenu()
+    );
   }
 
   private showLevelUpOverlay(): void {
@@ -2196,6 +2417,20 @@ export class RunScene extends Phaser.Scene {
     this.damageNumberTexts = [];
   }
 
+  private clearHints(): void {
+    this.hintTimers.forEach((timer) => timer.remove(false));
+    this.hintTimers = [];
+    this.clearHintObjects();
+  }
+
+  private clearHintObjects(): void {
+    this.hintObjects.forEach((object) => {
+      this.tweens.killTweensOf(object);
+      object.destroy();
+    });
+    this.hintObjects = [];
+  }
+
   private setHudVisible(visible: boolean): void {
     this.hudObjects.forEach((object) => object.setVisible(visible));
     if (!visible) {
@@ -2385,6 +2620,22 @@ function getWeaponIconTexture(weaponId: string): string {
   }
 
   return "weapon_bone_knives";
+}
+
+function formatWeaponName(weaponId: string): string {
+  if (weaponId === "holy_candle") {
+    return "Святая свеча";
+  }
+
+  if (weaponId === "grave_bell") {
+    return "Могильный колокол";
+  }
+
+  if (weaponId === "crow_swarm") {
+    return "Стая ворон";
+  }
+
+  return "Костяные ножи";
 }
 
 function formatWeaponHudLine(weaponId: string, stats: DerivedWeaponStats): string {

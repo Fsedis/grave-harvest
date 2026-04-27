@@ -24,12 +24,17 @@ export type SettingsData = {
   musicVolume: number;
 };
 
+export type TutorialState = {
+  firstRunHintsSeen: boolean;
+};
+
 export type SaveData = {
   version: 1;
   bones: number;
   meta: MetaUpgradeLevels;
   stats: SaveStats;
   settings: SettingsData;
+  tutorial: TutorialState;
 };
 
 export type StorageLike = {
@@ -56,7 +61,8 @@ export function createDefaultSaveData(): SaveData {
       totalKills: 0,
       totalBonesEarned: 0
     },
-    settings: createDefaultSettings()
+    settings: createDefaultSettings(),
+    tutorial: createDefaultTutorialState()
   };
 }
 
@@ -67,6 +73,12 @@ export function createDefaultSettings(): SettingsData {
     masterVolume: 0.8,
     sfxVolume: 0.75,
     musicVolume: 0.35
+  };
+}
+
+export function createDefaultTutorialState(): TutorialState {
+  return {
+    firstRunHintsSeen: false
   };
 }
 
@@ -126,6 +138,31 @@ export function updateSettings(save: SaveData, patch: Partial<SettingsData>): Sa
   };
 }
 
+export function normalizeTutorialState(value: unknown): TutorialState {
+  const defaults = createDefaultTutorialState();
+
+  if (!isObject(value)) {
+    return defaults;
+  }
+
+  return {
+    firstRunHintsSeen:
+      typeof value.firstRunHintsSeen === "boolean"
+        ? value.firstRunHintsSeen
+        : defaults.firstRunHintsSeen
+  };
+}
+
+export function markFirstRunHintsSeen(save: SaveData): SaveData {
+  return {
+    ...save,
+    tutorial: {
+      ...save.tutorial,
+      firstRunHintsSeen: true
+    }
+  };
+}
+
 function normalizeSaveData(value: unknown): SaveData {
   const defaults = createDefaultSaveData();
 
@@ -150,7 +187,8 @@ function normalizeSaveData(value: unknown): SaveData {
       totalKills: readStat(value.stats, "totalKills"),
       totalBonesEarned: readStat(value.stats, "totalBonesEarned")
     },
-    settings: normalizeSettings(value.settings)
+    settings: normalizeSettings(value.settings),
+    tutorial: normalizeTutorialState(value.tutorial)
   };
 }
 
