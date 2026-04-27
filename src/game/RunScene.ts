@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { getEnemyDefinition, type EnemyDefinition } from "../data/enemies";
+import { getBalanceDebugEnabled } from "../domain/balance";
 import {
   getDamageNumberVisual,
   getDamageRadiusRingVisual,
@@ -192,6 +193,9 @@ export class RunScene extends Phaser.Scene {
   private runEndSummary: RunEndSummary | null = null;
   private settingsReturnTarget: SettingsReturnTarget = "menu";
   private audio!: AudioManager;
+  private balanceDebugEnabled = false;
+  private balanceDebugText: Phaser.GameObjects.Text | null = null;
+  private balanceDebugFps = 60;
 
   constructor() {
     super("RunScene");
@@ -234,6 +238,7 @@ export class RunScene extends Phaser.Scene {
   create(): void {
     this.loadSaveData();
     this.audio = new AudioManager(this.saveData.settings);
+    this.balanceDebugEnabled = getBalanceDebugEnabled(getCurrentLocationSearch());
     this.createTextures();
     this.createArena();
     this.createGroups();
@@ -250,6 +255,7 @@ export class RunScene extends Phaser.Scene {
 
     const dt = Math.min(deltaMs / 1000, 0.033);
 
+    this.balanceDebugFps = this.balanceDebugFps * 0.9 + (1000 / Math.max(deltaMs, 1)) * 0.1;
     this.run.timeElapsed += dt;
     this.updatePlayerMovement();
     this.updateSpawnDirector(dt);
@@ -589,6 +595,15 @@ export class RunScene extends Phaser.Scene {
       this.add.rectangle(0, 0, 0, 0, 0x8b1515, 0).setOrigin(0, 0),
       this.add.rectangle(0, 0, 0, 0, 0x8b1515, 0).setOrigin(0, 0)
     ];
+    if (this.balanceDebugEnabled) {
+      this.balanceDebugText = this.add.text(0, 0, "", {
+        fontFamily: "Inter, Arial, sans-serif",
+        fontSize: "12px",
+        color: "#d8f0c8",
+        backgroundColor: "rgba(10, 14, 10, 0.72)",
+        padding: { x: 6, y: 4 }
+      });
+    }
     this.weaponIcons = [];
     this.weaponTexts = [];
 
@@ -615,6 +630,9 @@ export class RunScene extends Phaser.Scene {
       this.bossHpText,
       ...this.lowHpEdges
     ];
+    if (this.balanceDebugText) {
+      this.hudObjects.push(this.balanceDebugText);
+    }
 
     this.hudObjects.forEach((object) => object.setScrollFactor(0).setDepth(1000));
     this.lowHpEdges.forEach((edge) => edge.setDepth(999));
@@ -2562,7 +2580,36 @@ export class RunScene extends Phaser.Scene {
         .setOrigin(0.5, 0);
     }
 
+    this.updateBalanceDebugOverlay(compact);
     this.layoutLowHpWarning(width, height, compact);
+  }
+
+  private updateBalanceDebugOverlay(compact: boolean): void {
+    if (!this.balanceDebugText) {
+      return;
+    }
+
+    const visible = this.status === "playing" || this.status === "paused";
+    this.balanceDebugText.setVisible(visible);
+
+    if (!visible) {
+      return;
+    }
+
+    this.balanceDebugText
+      .setText(
+        [
+          `FPS ${Math.round(this.balanceDebugFps)}`,
+          `t ${formatTimer(this.run.timeElapsed)}`,
+          `kills ${this.run.kills}`,
+          `lvl ${this.run.level}`,
+          `en ${this.enemies.countActive(true)}`,
+          `pr ${this.projectiles.countActive(true)}`,
+          `xp ${this.pickups.countActive(true)}`,
+          `budget ${this.run.spawnBudget.toFixed(1)}`
+        ].join("   ")
+      )
+      .setPosition(24, compact ? 132 : 98);
   }
 }
 
@@ -2751,4 +2798,12 @@ function getDeathBurstColor(enemyId: string): number {
   }
 
   return 0x8f2620;
+}
+
+function getCurrentLocationSearch(): string {
+  if (typeof globalThis.location === "undefined") {
+    return "";
+  }
+
+  return globalThis.location.search;
 }

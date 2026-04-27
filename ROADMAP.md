@@ -25,6 +25,7 @@
 - Особые weapon-upgrades работают как боевые эффекты: второй удар колокола, ожог свечи и кровотечение ворон.
 - 10-минутная spawn curve, enemy/projectile/pickup caps и pickup merging.
 - Retry loop явно сбрасывает боевые сущности, overlays и boss state.
+- Первый MVP balance pass: целевые диапазоны закреплены тестами, Captain усилен, добавлен debug overlay через `?debug=balance`.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
 - Bones сохраняются в localStorage и тратятся на 5 постоянных улучшений.
 - Экран Permanent Upgrades и reset progress.
@@ -151,6 +152,8 @@ Definition of Done:
 
 Цель: собрать первую законченную MVP-версию.
 
+- [x] Добавить первый MVP balance pass с доменными target ranges.
+- [x] Добавить debug/perf overlay через `?debug=balance`.
 - [ ] Настроить целевую длительность первого проигрыша: 4-7 минут.
 - [ ] Настроить хороший 10-минутный забег: 800-1200 kills, level 23-28.
 - [ ] Проверить FPS при 180 активных врагах.
@@ -169,8 +172,8 @@ Definition of Done:
 Следующий рабочий срез: MVP Balance And Release.
 
 Порядок задач:
-1. Настроить целевую длительность первого проигрыша: 4-7 минут.
-2. Настроить хороший 10-минутный забег: 800-1200 kills, level 23-28.
+1. Пройти ручной balance run с `?debug=balance`.
+2. Настроить целевую длительность первого проигрыша: 4-7 минут.
 3. Проверить FPS при 180 активных врагах.
 4. Проверить death/victory/retry loop на 3-5 забегах подряд.
 5. Добавить README и release checklist.

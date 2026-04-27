@@ -47,7 +47,7 @@ const SCRIPTED_ENEMY_SPAWNS: ScriptedEnemySpawn[] = [
     enemyId: "bone_knight",
     name: "Капитан костяных рыцарей",
     time: 600,
-    hpMultiplier: 1.75,
+    hpMultiplier: 2.2,
     scaleMultiplier: 1.22,
     color: 0xd1c07d
   }
@@ -149,6 +149,7 @@ export type NightPacingEstimate = {
     min: number;
     max: number;
   };
+  estimatedLevel: number;
   levelUps: number;
   pressureTier: NightPressureTier;
 };
@@ -156,9 +157,10 @@ export type NightPacingEstimate = {
 export function estimateNightPacing(seconds: number): NightPacingEstimate {
   const safeSeconds = Math.max(0, Math.floor(seconds));
   const generatedBudget = estimateGeneratedBudget(safeSeconds);
-  const estimatedCollectableXp = Math.floor(generatedBudget * 0.28);
+  const estimatedCollectableXp = Math.floor(generatedBudget * 0.75);
   const minKills = roundToNearest(generatedBudget / 8.8, 50);
   const maxKills = Math.max(minKills, roundToNearest(generatedBudget / 5.9, 50));
+  const levelUps = estimateLevelUps(estimatedCollectableXp);
 
   return {
     seconds: safeSeconds,
@@ -168,7 +170,8 @@ export function estimateNightPacing(seconds: number): NightPacingEstimate {
       min: minKills,
       max: maxKills
     },
-    levelUps: estimateLevelUps(estimatedCollectableXp),
+    estimatedLevel: 1 + levelUps,
+    levelUps,
     pressureTier: getNightPressureTier(safeSeconds)
   };
 }

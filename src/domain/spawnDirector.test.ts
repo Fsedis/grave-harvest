@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isWithinBalanceRange, MVP_BALANCE_TARGETS } from "./balance";
 import {
   estimateEarlyGamePacing,
   estimateNightPacing,
@@ -84,13 +85,26 @@ describe("estimateEarlyGamePacing", () => {
 });
 
 describe("estimateNightPacing", () => {
+  it("keeps intermediate checkpoints in rising pressure order", () => {
+    const fiveMinutes = estimateNightPacing(300);
+    const eightMinutes = estimateNightPacing(480);
+    const fullNight = estimateNightPacing(600);
+
+    expect(fiveMinutes.pressureTier).toBe("dense");
+    expect(eightMinutes.pressureTier).toBe("panic");
+    expect(fullNight.pressureTier).toBe("final");
+    expect(fiveMinutes.generatedBudget).toBeLessThan(eightMinutes.generatedBudget);
+    expect(eightMinutes.generatedBudget).toBeLessThan(fullNight.generatedBudget);
+  });
+
   it("estimates a full 10-minute night as final pressure with MVP-scale activity", () => {
     const estimate = estimateNightPacing(600);
 
     expect(estimate.generatedBudget).toBeGreaterThan(7000);
-    expect(estimate.estimatedKills).toEqual({ min: 800, max: 1200 });
-    expect(estimate.estimatedCollectableXp).toBeGreaterThan(1800);
-    expect(estimate.levelUps).toBeGreaterThanOrEqual(15);
+    expect(isWithinBalanceRange(estimate.estimatedKills.min, MVP_BALANCE_TARGETS.fullRunKills)).toBe(true);
+    expect(isWithinBalanceRange(estimate.estimatedKills.max, MVP_BALANCE_TARGETS.fullRunKills)).toBe(true);
+    expect(estimate.estimatedCollectableXp).toBeGreaterThan(5200);
+    expect(isWithinBalanceRange(estimate.estimatedLevel, MVP_BALANCE_TARGETS.fullRunLevel)).toBe(true);
     expect(estimate.pressureTier).toBe("final");
   });
 });
@@ -106,7 +120,7 @@ describe("getScriptedEnemySpawns", () => {
 
     expect(captain.id).toBe("bone_knight_captain");
     expect(captain.enemyId).toBe("bone_knight");
-    expect(captain.hpMultiplier).toBeGreaterThan(1);
+    expect(captain.hpMultiplier).toBe(2.2);
     expect(getScriptedEnemySpawns(600, 600.5)).toEqual([]);
   });
 });
