@@ -21,7 +21,7 @@ export type EnemyDefinition = {
 export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   {
     id: "skeleton",
-    name: "Skeleton",
+    name: "Скелет",
     hp: 12,
     speed: 95,
     damage: 8,
@@ -38,7 +38,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: "grave_rat",
-    name: "Grave Rat",
+    name: "Кладбищенская крыса",
     hp: 8,
     speed: 155,
     damage: 5,
@@ -55,7 +55,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: "rot_walker",
-    name: "Rot Walker",
+    name: "Гнилой ходок",
     hp: 45,
     speed: 65,
     damage: 14,
@@ -72,7 +72,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: "ghost",
-    name: "Ghost",
+    name: "Призрак",
     hp: 22,
     speed: 115,
     damage: 10,
@@ -89,7 +89,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: "bone_knight",
-    name: "Bone Knight",
+    name: "Костяной рыцарь",
     hp: 350,
     speed: 85,
     damage: 20,

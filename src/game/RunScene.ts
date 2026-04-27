@@ -15,6 +15,7 @@ import {
   pickEnemyForBudget,
   type ScriptedEnemySpawn
 } from "../domain/spawnDirector";
+import { selectHomingTarget, type HomingTargetCandidate } from "../domain/homing";
 import { hasWonNight } from "../domain/runRules";
 import {
   applyUpgrade,
@@ -39,6 +40,7 @@ const ENEMY_SEPARATION_NEIGHBORS = 8;
 type RunStatus = "menu" | "playing" | "paused" | "level_up" | "game_over" | "victory";
 
 type EnemySprite = Phaser.Physics.Arcade.Image & {
+  runtimeId: number;
   def: EnemyDefinition;
   hp: number;
   maxHp: number;
@@ -61,6 +63,10 @@ type ProjectileSprite = Phaser.Physics.Arcade.Image & {
   pierce: number;
   isCrit: boolean;
   damageTextColor: number;
+  kind: "knife" | "crow";
+  targetEnemyId: number | null;
+  homingSpeed: number;
+  homingRange: number;
 };
 
 type DamageFeedbackOptions = {
@@ -117,6 +123,7 @@ export class RunScene extends Phaser.Scene {
   private bossHpText!: Phaser.GameObjects.Text;
   private lowHpEdges: Phaser.GameObjects.Rectangle[] = [];
   private damageNumberTexts: Phaser.GameObjects.Text[] = [];
+  private nextEnemyRuntimeId = 1;
   private activeFinalBoss: EnemySprite | null = null;
 
   constructor() {
@@ -420,6 +427,7 @@ export class RunScene extends Phaser.Scene {
   private startRun(): void {
     this.clearOverlay();
     this.clearEntities();
+    this.nextEnemyRuntimeId = 1;
     const upgradeState = createInitialUpgradeState();
 
     this.run = {
@@ -555,6 +563,8 @@ export class RunScene extends Phaser.Scene {
 
     const scaleMultiplier = scripted?.scaleMultiplier ?? 1;
     const display = getEnemyDisplaySize(definition);
+    enemy.runtimeId = this.nextEnemyRuntimeId;
+    this.nextEnemyRuntimeId += 1;
     enemy.def = definition;
     enemy.hp = Math.round(definition.hp * (scripted?.hpMultiplier ?? 1));
     enemy.maxHp = enemy.hp;
@@ -776,6 +786,10 @@ export class RunScene extends Phaser.Scene {
     projectile.pierce = 0;
     projectile.isCrit = crit;
     projectile.damageTextColor = crit ? 0xf2d36b : 0xf3ead0;
+    projectile.kind = "knife";
+    projectile.targetEnemyId = null;
+    projectile.homingSpeed = 0;
+    projectile.homingRange = 0;
     projectile.setTexture("knife");
     projectile.setActive(true);
     projectile.setVisible(true);
@@ -880,18 +894,22 @@ export class RunScene extends Phaser.Scene {
     const angle = aim + spread;
 
     projectile.damage = Math.round(stats.damage);
-    projectile.range = stats.range;
+    projectile.range = stats.range * 1.7;
     projectile.traveled = 0;
     projectile.pierce = stats.bleed ? 1 : 0;
     projectile.isCrit = false;
     projectile.damageTextColor = 0xf3ead0;
+    projectile.kind = "crow";
+    projectile.targetEnemyId = target.runtimeId;
+    projectile.homingSpeed = 540;
+    projectile.homingRange = stats.range;
     projectile.setTexture("crow");
     projectile.setActive(true);
     projectile.setVisible(true);
     projectile.enableBody(true, this.player.x, this.player.y, true, true);
     projectile.setDepth(19);
     projectile.setRotation(angle);
-    projectile.setVelocity(Math.cos(angle) * 520, Math.sin(angle) * 520);
+    projectile.setVelocity(Math.cos(angle) * projectile.homingSpeed, Math.sin(angle) * projectile.homingSpeed);
   }
 
   private updateProjectiles(dt: number): void {
@@ -903,6 +921,15 @@ export class RunScene extends Phaser.Scene {
       }
 
       const body = projectile.body as Phaser.Physics.Arcade.Body;
+
+      if (projectile.kind === "crow") {
+        this.updateCrowProjectile(projectile);
+
+        if (!projectile.active) {
+          continue;
+        }
+      }
+
       projectile.traveled += body.velocity.length() * dt;
 
       if (projectile.traveled >= projectile.range) {
@@ -936,6 +963,58 @@ export class RunScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  private updateCrowProjectile(projectile: ProjectileSprite): void {
+    const targetId = selectHomingTarget(
+      projectile.targetEnemyId,
+      projectile.homingRange,
+      this.getHomingCandidates(projectile.x, projectile.y)
+    );
+    projectile.targetEnemyId = targetId;
+
+    if (targetId === null) {
+      projectile.disableBody(true, true);
+      return;
+    }
+
+    const target = this.findEnemyByRuntimeId(targetId);
+
+    if (!target) {
+      projectile.disableBody(true, true);
+      return;
+    }
+
+    const angle = Phaser.Math.Angle.Between(projectile.x, projectile.y, target.x, target.y);
+    projectile.setRotation(angle);
+    projectile.setVelocity(
+      Math.cos(angle) * projectile.homingSpeed,
+      Math.sin(angle) * projectile.homingSpeed
+    );
+  }
+
+  private getHomingCandidates(x: number, y: number): HomingTargetCandidate[] {
+    return this.enemies.getChildren().map((child) => {
+      const enemy = child as EnemySprite;
+
+      return {
+        id: enemy.runtimeId,
+        active: enemy.active,
+        distanceSq: Phaser.Math.Distance.Squared(x, y, enemy.x, enemy.y)
+      };
+    });
+  }
+
+  private findEnemyByRuntimeId(runtimeId: number): EnemySprite | null {
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as EnemySprite;
+
+      if (enemy.active && enemy.runtimeId === runtimeId) {
+        return enemy;
+      }
+    }
+
+    return null;
   }
 
   private damageEnemy(enemy: EnemySprite, amount: number, feedback: DamageFeedbackOptions = {}): void {
@@ -1319,24 +1398,24 @@ export class RunScene extends Phaser.Scene {
     this.addOverlayText(
       width / 2,
       height / 2 - 72,
-      "Move with WASD or arrows. Attacks are automatic. Collect souls to grow stronger.",
+      "Двигайся WASD или стрелками. Атаки автоматические. Собирай души, чтобы стать сильнее.",
       18,
       "#cfc3ad"
     )
       .setOrigin(0.5)
       .setWordWrapWidth(subtitleWidth);
-    this.addOverlayButton(width / 2, height / 2 + 8, 220, 52, "Start Night", () => this.startRun());
-    this.addOverlayText(width / 2, height / 2 + 84, "Enter also starts the run", 15, "#8f9687").setOrigin(0.5);
+    this.addOverlayButton(width / 2, height / 2 + 8, 220, 52, "Начать ночь", () => this.startRun());
+    this.addOverlayText(width / 2, height / 2 + 84, "Enter тоже запускает забег", 15, "#8f9687").setOrigin(0.5);
   }
 
   private showPauseOverlay(): void {
     this.clearOverlay();
     const { width, height } = this.scale;
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x0b0e0c, 0.58);
-    this.addOverlayText(width / 2, height / 2 - 96, "Paused", 42, "#f4ead7", "700").setOrigin(0.5);
-    this.addOverlayButton(width / 2, height / 2 - 24, 190, 48, "Resume", () => this.resumeRun());
-    this.addOverlayButton(width / 2, height / 2 + 38, 190, 48, "Restart", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 100, 190, 48, "Main Menu", () => this.showMainMenu());
+    this.addOverlayText(width / 2, height / 2 - 96, "Пауза", 42, "#f4ead7", "700").setOrigin(0.5);
+    this.addOverlayButton(width / 2, height / 2 - 24, 190, 48, "Продолжить", () => this.resumeRun());
+    this.addOverlayButton(width / 2, height / 2 + 38, 190, 48, "Заново", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 100, 190, 48, "Главное меню", () => this.showMainMenu());
   }
 
   private showLevelUpOverlay(): void {
@@ -1344,7 +1423,7 @@ export class RunScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const compact = width < 760;
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090b0a, 0.64);
-    this.addOverlayText(width / 2, 72, "Choose Your Curse", width < 520 ? 30 : 40, "#f4ead7", "700")
+    this.addOverlayText(width / 2, 72, "Выбери проклятие", width < 520 ? 30 : 40, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 40);
 
@@ -1370,7 +1449,7 @@ export class RunScene extends Phaser.Scene {
       this.addOverlayText(compact ? x + 22 : x, compact ? y - 48 : y - 34, upgrade.name, compact ? 18 : 22, "#f4ead7", "700")
         .setOrigin(0.5)
         .setWordWrapWidth(compact ? cardWidth - 92 : cardWidth - 34);
-      this.addOverlayText(x, compact ? y - 16 : y + 2, upgrade.rarity.toUpperCase(), 14, colorToCss(rarityColor), "700").setOrigin(0.5);
+      this.addOverlayText(x, compact ? y - 16 : y + 2, formatRarityLabel(upgrade.rarity), 14, colorToCss(rarityColor), "700").setOrigin(0.5);
       this.addOverlayText(x, compact ? y + 25 : y + 50, upgrade.description, compact ? 15 : 16, "#cfc4b0")
         .setOrigin(0.5)
         .setWordWrapWidth(cardWidth - 44);
@@ -1390,13 +1469,13 @@ export class RunScene extends Phaser.Scene {
     });
 
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.76);
-    this.addOverlayText(width / 2, height / 2 - 148, "The Grave Takes Its Due", width < 520 ? 30 : 38, "#f4ead7", "700")
+    this.addOverlayText(width / 2, height / 2 - 148, "Кладбище забрало своё", width < 520 ? 30 : 38, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
     this.addOverlayText(
       width / 2,
       height / 2 - 78,
-      `Survival ${formatTimer(this.run.timeElapsed)}   Kills ${this.run.kills}   Level ${this.run.level}`,
+      `Выжил ${formatTimer(this.run.timeElapsed)}   Убийства ${this.run.kills}   Уровень ${this.run.level}`,
       22,
       "#d9cfba"
     )
@@ -1405,14 +1484,14 @@ export class RunScene extends Phaser.Scene {
     this.addOverlayText(
       width / 2,
       height / 2 - 34,
-      `Bones collected ${this.run.bonesCollected}   Retained ${retainedBones}`,
+      `Кости собрано ${this.run.bonesCollected}   Сохранено ${retainedBones}`,
       20,
       "#e5d39f"
     )
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayButton(width / 2, height / 2 + 38, 210, 52, "Retry", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 102, 210, 48, "Main Menu", () => this.showMainMenu());
+    this.addOverlayButton(width / 2, height / 2 + 38, 210, 52, "Повторить", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 102, 210, 48, "Главное меню", () => this.showMainMenu());
   }
 
   private showVictoryOverlay(): void {
@@ -1426,16 +1505,16 @@ export class RunScene extends Phaser.Scene {
     });
 
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.74);
-    this.addOverlayText(width / 2, height / 2 - 156, "Night Survived", width < 520 ? 34 : 44, "#f4ead7", "700")
+    this.addOverlayText(width / 2, height / 2 - 156, "Ночь пережита", width < 520 ? 34 : 44, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
-    this.addOverlayText(width / 2, height / 2 - 96, "The Captain is dead.", 22, "#f1dfaa", "700")
+    this.addOverlayText(width / 2, height / 2 - 96, "Капитан мёртв.", 22, "#f1dfaa", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
     this.addOverlayText(
       width / 2,
       height / 2 - 42,
-      `Time ${formatTimer(this.run.timeElapsed)}   Kills ${this.run.kills}   Level ${this.run.level}`,
+      `Время ${formatTimer(this.run.timeElapsed)}   Убийства ${this.run.kills}   Уровень ${this.run.level}`,
       22,
       "#d9cfba"
     )
@@ -1444,14 +1523,14 @@ export class RunScene extends Phaser.Scene {
     this.addOverlayText(
       width / 2,
       height / 2 + 2,
-      `Bones collected ${this.run.bonesCollected}   Retained ${retainedBones}`,
+      `Кости собрано ${this.run.bonesCollected}   Сохранено ${retainedBones}`,
       20,
       "#e5d39f"
     )
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayButton(width / 2, height / 2 + 76, 210, 52, "Next Run", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 140, 210, 48, "Main Menu", () => this.showMainMenu());
+    this.addOverlayButton(width / 2, height / 2 + 76, 210, 52, "Следующий забег", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 140, 210, 48, "Главное меню", () => this.showMainMenu());
   }
 
   private addOverlayButton(
@@ -1585,9 +1664,9 @@ export class RunScene extends Phaser.Scene {
     this.xpBack.setPosition(24, height - 28);
     this.xpBack.width = width - 48;
 
-    this.hpText.setText(`HP ${Math.ceil(this.run.hp)} / ${this.run.upgrades.maxHp}`);
+    this.hpText.setText(`ОЗ ${Math.ceil(this.run.hp)} / ${this.run.upgrades.maxHp}`);
     this.hpText.setPosition(hpX, hpY + 22);
-    this.levelText.setText(`Level ${this.run.level}`);
+    this.levelText.setText(`Уровень ${this.run.level}`);
     this.levelText.setPosition(hpX, hpY + 46);
     this.timerText
       .setText(formatTimer(this.run.timeElapsed))
@@ -1595,11 +1674,11 @@ export class RunScene extends Phaser.Scene {
       .setPosition(width / 2, compact ? 10 : 18)
       .setOrigin(0.5, 0);
     this.bonesText
-      .setText(`Bones ${this.run.bonesCollected}`)
+      .setText(`Кости ${this.run.bonesCollected}`)
       .setPosition(width - (compact ? 16 : 24), compact ? 58 : 24)
       .setOrigin(1, 0);
     this.killText
-      .setText(`Kills ${this.run.kills}`)
+      .setText(`Убийства ${this.run.kills}`)
       .setPosition(width - (compact ? 16 : 24), compact ? 84 : 50)
       .setOrigin(1, 0);
 
@@ -1648,7 +1727,7 @@ export class RunScene extends Phaser.Scene {
       this.bossHpFill.setPosition(bossX, bossY);
       this.bossHpFill.width = bossBarWidth * bossRatio;
       this.bossHpText
-        .setText(`Bone Knight Captain  ${Math.ceil(this.activeFinalBoss.hp)} / ${this.activeFinalBoss.maxHp}`)
+        .setText(`Капитан костяных рыцарей  ${Math.ceil(this.activeFinalBoss.hp)} / ${this.activeFinalBoss.maxHp}`)
         .setPosition(width / 2, bossY + 18)
         .setOrigin(0.5, 0);
     }
@@ -1677,6 +1756,18 @@ function getRarityColor(rarity: UpgradeDefinition["rarity"]): number {
   return 0xd8d0bd;
 }
 
+function formatRarityLabel(rarity: UpgradeDefinition["rarity"]): string {
+  if (rarity === "rare") {
+    return "РЕДКОЕ";
+  }
+
+  if (rarity === "uncommon") {
+    return "НЕОБЫЧНОЕ";
+  }
+
+  return "ОБЫЧНОЕ";
+}
+
 function colorToCss(color: number): string {
   return `#${color.toString(16).padStart(6, "0")}`;
 }
@@ -1699,18 +1790,18 @@ function getWeaponIconTexture(weaponId: string): string {
 
 function formatWeaponHudLine(weaponId: string, stats: DerivedWeaponStats): string {
   if (weaponId === "holy_candle") {
-    return `Holy Candle  r${Math.round(stats.radius)}  ${stats.cooldown.toFixed(1)}s`;
+    return `Святая свеча  r${Math.round(stats.radius)}  ${stats.cooldown.toFixed(1)}с`;
   }
 
   if (weaponId === "grave_bell") {
-    return `Grave Bell  x${stats.pulseCount}  ${stats.cooldown.toFixed(1)}s`;
+    return `Могильный колокол  x${stats.pulseCount}  ${stats.cooldown.toFixed(1)}с`;
   }
 
   if (weaponId === "crow_swarm") {
-    return `Crow Swarm  x${stats.projectileCount}  ${stats.cooldown.toFixed(1)}s`;
+    return `Стая ворон  x${stats.projectileCount}  ${stats.cooldown.toFixed(1)}с`;
   }
 
-  return `Bone Knives  x${stats.projectileCount}  ${stats.cooldown.toFixed(1)}s`;
+  return `Костяные ножи  x${stats.projectileCount}  ${stats.cooldown.toFixed(1)}с`;
 }
 
 function getEnemyTexture(enemyId: string): string {

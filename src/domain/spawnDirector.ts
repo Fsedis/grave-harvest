@@ -30,7 +30,7 @@ const SCRIPTED_ENEMY_SPAWNS: ScriptedEnemySpawn[] = [
   {
     id: "bone_knight_elite",
     enemyId: "bone_knight",
-    name: "Bone Knight",
+    name: "Костяной рыцарь",
     time: 300,
     hpMultiplier: 1,
     scaleMultiplier: 1,
@@ -39,7 +39,7 @@ const SCRIPTED_ENEMY_SPAWNS: ScriptedEnemySpawn[] = [
   {
     id: "bone_knight_captain",
     enemyId: "bone_knight",
-    name: "Bone Knight Captain",
+    name: "Капитан костяных рыцарей",
     time: 600,
     hpMultiplier: 1.75,
     scaleMultiplier: 1.22,

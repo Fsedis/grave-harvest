@@ -15,7 +15,7 @@ export type WeaponDefinition = {
 export const WEAPON_DEFINITIONS: WeaponDefinition[] = [
   {
     id: "bone_knives",
-    name: "Bone Knives",
+    name: "Костяные ножи",
     type: "projectile",
     baseDamage: 10,
     cooldown: 0.8,
@@ -26,7 +26,7 @@ export const WEAPON_DEFINITIONS: WeaponDefinition[] = [
   },
   {
     id: "holy_candle",
-    name: "Holy Candle",
+    name: "Святая свеча",
     type: "aura",
     baseDamage: 4,
     cooldown: 0.5,
@@ -36,7 +36,7 @@ export const WEAPON_DEFINITIONS: WeaponDefinition[] = [
   },
   {
     id: "grave_bell",
-    name: "Grave Bell",
+    name: "Могильный колокол",
     type: "pulse",
     baseDamage: 18,
     cooldown: 4,
@@ -45,7 +45,7 @@ export const WEAPON_DEFINITIONS: WeaponDefinition[] = [
   },
   {
     id: "crow_swarm",
-    name: "Crow Swarm",
+    name: "Стая ворон",
     type: "summon",
     baseDamage: 12,
     cooldown: 1.2,

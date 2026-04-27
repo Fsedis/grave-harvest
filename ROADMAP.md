@@ -17,6 +17,8 @@
 - Victory screen и boss HP bar.
 - Damage-radius rings для Holy Candle и Grave Bell совпадают с реальным радиусом урона.
 - Damage numbers с лимитом, low HP warning и level-up flash.
+- Видимый UI переведён на русский.
+- Crow Swarm преследует цель и ретаргетится, если цель умерла.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
 - Базовые run-upgrades и weapon-specific upgrades.
 - Basic rarity weighting для карт: common, uncommon, rare.
@@ -61,6 +63,7 @@ Definition of Done:
 - [x] Реализовать Holy Candle.
 - [x] Реализовать Grave Bell.
 - [x] Реализовать Crow Swarm.
+- [x] Переделать Crow Swarm в homing-оружие с ретаргетом.
 - [x] Добавить Ghost с волнообразным движением.
 - [x] Добавить Bone Knight как элиту.
 - [x] Добавить Bone Knight Captain на 10:00.

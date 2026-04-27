@@ -82,8 +82,8 @@ export function createInitialUpgradeState(): UpgradeState {
 export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   {
     id: "damage_up",
-    name: "Grave Strength",
-    description: "+15% global damage.",
+    name: "Могильная сила",
+    description: "+15% ко всему урону.",
     rarity: "common",
     maxStacks: 5,
     apply: (state) => {
@@ -92,8 +92,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "attack_speed_up",
-    name: "Faster Rites",
-    description: "+12% attack speed.",
+    name: "Быстрые обряды",
+    description: "+12% к скорости атак.",
     rarity: "common",
     maxStacks: 5,
     apply: (state) => {
@@ -102,8 +102,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "move_speed_up",
-    name: "Restless Feet",
-    description: "+10% movement speed.",
+    name: "Беспокойные ноги",
+    description: "+10% к скорости движения.",
     rarity: "common",
     maxStacks: 3,
     apply: (state) => {
@@ -112,8 +112,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "max_hp_up",
-    name: "Grave Flesh",
-    description: "+20 max HP.",
+    name: "Могильная плоть",
+    description: "+20 к максимуму ОЗ.",
     rarity: "common",
     maxStacks: 5,
     apply: (state) => {
@@ -122,8 +122,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "pickup_radius_up",
-    name: "Soul Magnet",
-    description: "+25% pickup radius.",
+    name: "Магнит душ",
+    description: "+25% к радиусу подбора.",
     rarity: "common",
     maxStacks: 4,
     apply: (state) => {
@@ -132,8 +132,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "area_up",
-    name: "Wider Curse",
-    description: "+15% area size.",
+    name: "Шире проклятие",
+    description: "+15% к размеру областей.",
     rarity: "common",
     maxStacks: 4,
     apply: (state) => {
@@ -142,8 +142,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "cooldown_down",
-    name: "Shorter Prayers",
-    description: "-10% weapon cooldowns.",
+    name: "Короткие молитвы",
+    description: "-10% к перезарядке оружия.",
     rarity: "uncommon",
     maxStacks: 4,
     apply: (state) => {
@@ -152,8 +152,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "crit_chance_up",
-    name: "Death's Luck",
-    description: "+7% crit chance.",
+    name: "Удача смерти",
+    description: "+7% к шансу крита.",
     rarity: "uncommon",
     maxStacks: 4,
     apply: (state) => {
@@ -162,8 +162,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "knife_projectile",
-    name: "Extra Bone Knife",
-    description: "Bone Knives fire +1 projectile.",
+    name: "Лишний костяной нож",
+    description: "Костяные ножи выпускают +1 снаряд.",
     rarity: "uncommon",
     maxStacks: 3,
     requirements: {
@@ -176,8 +176,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "candle_area",
-    name: "Bigger Flame",
-    description: "Holy Candle +20% radius.",
+    name: "Больше пламени",
+    description: "Святая свеча получает +20% радиуса.",
     rarity: "common",
     maxStacks: 4,
     requirements: {
@@ -189,8 +189,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "candle_damage",
-    name: "Hotter Flame",
-    description: "Holy Candle +20% damage.",
+    name: "Жарче пламя",
+    description: "Святая свеча получает +20% урона.",
     rarity: "common",
     maxStacks: 4,
     requirements: {
@@ -202,8 +202,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "candle_burn",
-    name: "Unholy Burn",
-    description: "Holy Candle scorches enemies it touches.",
+    name: "Нечистый ожог",
+    description: "Святая свеча обжигает задетых врагов.",
     rarity: "uncommon",
     maxStacks: 1,
     requirements: {
@@ -215,8 +215,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "bell_cooldown",
-    name: "Faster Bell",
-    description: "Grave Bell -20% cooldown.",
+    name: "Быстрый звон",
+    description: "Могильный колокол получает -20% перезарядки.",
     rarity: "common",
     maxStacks: 3,
     requirements: {
@@ -228,8 +228,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "bell_area",
-    name: "Deeper Toll",
-    description: "Grave Bell +25% radius.",
+    name: "Глубокий набат",
+    description: "Могильный колокол получает +25% радиуса.",
     rarity: "common",
     maxStacks: 3,
     requirements: {
@@ -241,8 +241,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "bell_double_pulse",
-    name: "Second Toll",
-    description: "Grave Bell triggers a second delayed pulse.",
+    name: "Второй удар",
+    description: "Могильный колокол даёт второй отложенный импульс.",
     rarity: "rare",
     maxStacks: 1,
     requirements: {
@@ -254,8 +254,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "crow_extra",
-    name: "More Crows",
-    description: "Crow Swarm sends +1 crow.",
+    name: "Больше ворон",
+    description: "Стая ворон выпускает +1 ворону.",
     rarity: "uncommon",
     maxStacks: 3,
     requirements: {
@@ -267,8 +267,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "crow_damage",
-    name: "Sharper Beaks",
-    description: "Crow Swarm +20% damage.",
+    name: "Острые клювы",
+    description: "Стая ворон получает +20% урона.",
     rarity: "common",
     maxStacks: 4,
     requirements: {
@@ -280,8 +280,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "crow_bleed",
-    name: "Carrion Mark",
-    description: "Crows leave a bleeding wound.",
+    name: "Падальная метка",
+    description: "Вороны оставляют кровоточащую рану.",
     rarity: "rare",
     maxStacks: 1,
     requirements: {
@@ -293,8 +293,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "unlock_candle",
-    name: "Unlock Holy Candle",
-    description: "Adds Holy Candle.",
+    name: "Открыть Святую свечу",
+    description: "Добавляет Святую свечу.",
     rarity: "common",
     maxStacks: 1,
     requirements: {
@@ -307,8 +307,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "unlock_bell",
-    name: "Unlock Grave Bell",
-    description: "Adds Grave Bell.",
+    name: "Открыть Могильный колокол",
+    description: "Добавляет Могильный колокол.",
     rarity: "common",
     maxStacks: 1,
     requirements: {
@@ -321,8 +321,8 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
   },
   {
     id: "unlock_crows",
-    name: "Unlock Crow Swarm",
-    description: "Adds Crow Swarm.",
+    name: "Открыть Стаю ворон",
+    description: "Добавляет Стаю ворон.",
     rarity: "common",
     maxStacks: 1,
     requirements: {
