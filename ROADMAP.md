@@ -1,6 +1,6 @@
 # Grave Harvest Roadmap
 
-Статус на 2026-04-27: публичный репозиторий создан, в `main` лежит первый grey prototype.
+Статус на 2026-04-28: публичный репозиторий создан, в `main` лежит первый grey prototype.
 
 ## Текущая версия: v0.1 Grey Prototype
 
@@ -15,6 +15,7 @@
 - Scripted Bone Knight на 5:00 и Bone Knight Captain на 10:00.
 - Победа только после убийства финального Bone Knight Captain.
 - Victory screen и boss HP bar.
+- Damage-radius rings для Holy Candle и Grave Bell совпадают с реальным радиусом урона.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
 - Базовые run-upgrades и weapon-specific upgrades.
 - Basic rarity weighting для карт: common, uncommon, rare.
@@ -80,6 +81,7 @@ Definition of Done:
 - [ ] Настроить 10-минутную budget curve.
 - [x] Добавить scripted spawn элит на 5:00 и 10:00.
 - [x] Добавить boss HP bar.
+- [x] Синхронизировать AoE-визуал Holy Candle и Grave Bell с реальным damage radius.
 - [ ] Добавить hard caps для врагов, снарядов и pickups.
 - [ ] Добавить pickup merging при переполнении лимита.
 - [ ] Проверить повторный запуск нескольких забегов подряд.
@@ -150,7 +152,7 @@ Definition of Done:
 
 ## Ближайший фокус
 
-Следующий рабочий срез: Full Night Mode.
+Следующий рабочий срез: Full Night Balance Pass.
 
 Порядок задач:
 1. Настроить 10-минутную budget curve.

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { getEnemyDefinition, type EnemyDefinition } from "../data/enemies";
+import { getDamageRadiusRingVisual, getDecorativeRingVisual, type RingVisual } from "../domain/effects";
 import { calculateRetainedBones, xpRequired } from "../domain/progression";
 import {
   getScriptedEnemySpawns,
@@ -742,7 +743,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   private tickHolyCandle(stats: DerivedWeaponStats): void {
-    this.createRingBurst(this.player.x, this.player.y, 0xf7d779, stats.radius);
+    this.createDamageRadiusRing(this.player.x, this.player.y, 0xf7d779, stats.radius);
 
     for (const child of this.enemies.getChildren()) {
       const enemy = child as EnemySprite;
@@ -779,7 +780,7 @@ export class RunScene extends Phaser.Scene {
   private applyBellPulse(stats: DerivedWeaponStats, pulseIndex: number): void {
     const radius = stats.radius * (pulseIndex === 0 ? 1 : 0.82);
     const damage = Math.max(1, Math.round(stats.damage * (pulseIndex === 0 ? 1 : 0.65)));
-    this.createRingBurst(this.player.x, this.player.y, 0xcdbb8d, radius);
+    this.createDamageRadiusRing(this.player.x, this.player.y, 0xcdbb8d, radius);
     this.cameras.main.shake(80, 0.003);
 
     for (const child of this.enemies.getChildren()) {
@@ -1070,13 +1071,22 @@ export class RunScene extends Phaser.Scene {
   }
 
   private createRingBurst(x: number, y: number, color: number, radius: number): void {
-    const ring = this.add.circle(x, y, radius, color, 0).setStrokeStyle(2, color, 0.82).setDepth(14);
+    this.createRingEffect(x, y, color, getDecorativeRingVisual(radius));
+  }
+
+  private createDamageRadiusRing(x: number, y: number, color: number, radius: number): void {
+    this.createRingEffect(x, y, color, getDamageRadiusRingVisual(radius));
+  }
+
+  private createRingEffect(x: number, y: number, color: number, visual: RingVisual): void {
+    const ring = this.add.circle(x, y, visual.radius, color, 0).setStrokeStyle(2, color, 0.82).setDepth(14);
+    ring.setScale(visual.startScale);
 
     this.tweens.add({
       targets: ring,
       alpha: 0,
-      scale: 2.2,
-      duration: 220,
+      scale: visual.endScale,
+      duration: visual.durationMs,
       ease: "Quad.easeOut",
       onComplete: () => ring.destroy()
     });
