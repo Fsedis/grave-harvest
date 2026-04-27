@@ -20,6 +20,14 @@ describe("getAvailableUpgrades", () => {
     expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "knife_projectile")).toBe(true);
     expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "candle_area")).toBe(false);
   });
+
+  it("does not offer unlock cards for weapons without gameplay implementation", () => {
+    const state = createInitialUpgradeState();
+
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_candle")).toBe(false);
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_bell")).toBe(false);
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "unlock_crows")).toBe(false);
+  });
 });
 
 describe("selectUpgradeOptions", () => {

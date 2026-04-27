@@ -29,6 +29,8 @@ export type UpgradeDefinition = {
   apply: (state: UpgradeState) => void;
 };
 
+const GAMEPLAY_IMPLEMENTED_WEAPONS = new Set(["bone_knives"]);
+
 export function createInitialUpgradeState(): UpgradeState {
   return {
     maxHp: 100,
@@ -210,6 +212,13 @@ export function getAvailableUpgrades(state: UpgradeState): UpgradeDefinition[] {
     if (
       upgrade.requirements?.weaponNotOwned &&
       state.weapons.includes(upgrade.requirements.weaponNotOwned)
+    ) {
+      return false;
+    }
+
+    if (
+      upgrade.requirements?.weaponNotOwned &&
+      !GAMEPLAY_IMPLEMENTED_WEAPONS.has(upgrade.requirements.weaponNotOwned)
     ) {
       return false;
     }

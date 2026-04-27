@@ -50,7 +50,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     knockbackResistance: 0,
     behavior: "chase",
     spawnCost: 1,
-    firstAppearsAt: 60,
+    firstAppearsAt: 30,
     color: 0x8d7460
   },
   {
@@ -67,7 +67,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     knockbackResistance: 0.2,
     behavior: "chase",
     spawnCost: 3,
-    firstAppearsAt: 120,
+    firstAppearsAt: 75,
     color: 0x6f8c5c
   },
   {
@@ -84,7 +84,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     knockbackResistance: 0.65,
     behavior: "zigzag",
     spawnCost: 4,
-    firstAppearsAt: 240,
+    firstAppearsAt: 150,
     color: 0xa8e7ff
   },
   {

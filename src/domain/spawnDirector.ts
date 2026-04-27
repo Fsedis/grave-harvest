@@ -1,15 +1,18 @@
 import { ENEMY_DEFINITIONS, type EnemyDefinition } from "../data/enemies";
+import { xpRequired } from "./progression";
 
 const BUDGET_CURVE = [
-  { time: 0, budget: 1.5 },
-  { time: 60, budget: 2.5 },
-  { time: 120, budget: 3.5 },
-  { time: 180, budget: 5 },
-  { time: 240, budget: 6.5 },
-  { time: 300, budget: 8 },
-  { time: 360, budget: 10 },
-  { time: 420, budget: 12 },
-  { time: 480, budget: 15 },
+  { time: 0, budget: 1.8 },
+  { time: 30, budget: 2.8 },
+  { time: 60, budget: 4.2 },
+  { time: 90, budget: 5.5 },
+  { time: 120, budget: 7 },
+  { time: 180, budget: 8.5 },
+  { time: 240, budget: 10 },
+  { time: 300, budget: 11 },
+  { time: 360, budget: 12.5 },
+  { time: 420, budget: 14 },
+  { time: 480, budget: 16 },
   { time: 540, budget: 18 }
 ] as const;
 
@@ -53,6 +56,40 @@ export function pickEnemyForBudget(
   const index = Math.min(candidates.length - 1, Math.floor(rng() * candidates.length));
 
   return candidates[index];
+}
+
+export type EarlyGamePacingEstimate = {
+  seconds: number;
+  generatedBudget: number;
+  estimatedCollectableXp: number;
+  levelUps: number;
+};
+
+export function estimateEarlyGamePacing(seconds: number): EarlyGamePacingEstimate {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  let generatedBudget = 0;
+
+  for (let elapsed = 0; elapsed < safeSeconds; elapsed += 1) {
+    generatedBudget += getSpawnBudgetPerSecond(elapsed);
+  }
+
+  const estimatedCollectableXp = Math.floor(generatedBudget * 0.14);
+  let remainingXp = estimatedCollectableXp;
+  let nextLevel = 1;
+  let levelUps = 0;
+
+  while (remainingXp >= xpRequired(nextLevel)) {
+    remainingXp -= xpRequired(nextLevel);
+    nextLevel += 1;
+    levelUps += 1;
+  }
+
+  return {
+    seconds: safeSeconds,
+    generatedBudget: roundBudget(generatedBudget),
+    estimatedCollectableXp,
+    levelUps
+  };
 }
 
 function roundBudget(value: number): number {

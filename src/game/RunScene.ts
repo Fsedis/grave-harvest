@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { getEnemyDefinition, type EnemyDefinition } from "../data/enemies";
+import { type EnemyDefinition } from "../data/enemies";
 import { getWeaponDefinition } from "../data/weapons";
 import { calculateRetainedBones, xpRequired } from "../domain/progression";
 import { getSpawnBudgetPerSecond, pickEnemyForBudget } from "../domain/spawnDirector";
@@ -18,6 +18,8 @@ const HARD_ENEMY_CAP = 260;
 const HARD_PROJECTILE_CAP = 300;
 const HARD_PICKUP_CAP = 400;
 const PLAYER_INVULNERABILITY_SECONDS = 0.35;
+const ENEMY_SEPARATION_STRENGTH = 0.92;
+const ENEMY_SEPARATION_NEIGHBORS = 8;
 
 type RunStatus = "menu" | "playing" | "paused" | "level_up" | "game_over";
 
@@ -65,7 +67,7 @@ export class RunScene extends Phaser.Scene {
   private run!: RunStats;
   private currentUpgradeOptions: UpgradeDefinition[] = [];
   private overlayObjects: Phaser.GameObjects.GameObject[] = [];
-  private hudObjects: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text> = [];
+  private hudObjects: Array<Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text> = [];
   private hpFill!: Phaser.GameObjects.Rectangle;
   private xpFill!: Phaser.GameObjects.Rectangle;
   private hpText!: Phaser.GameObjects.Text;
@@ -73,6 +75,9 @@ export class RunScene extends Phaser.Scene {
   private bonesText!: Phaser.GameObjects.Text;
   private killText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
+  private weaponPanel!: Phaser.GameObjects.Rectangle;
+  private weaponIcon!: Phaser.GameObjects.Image;
+  private weaponText!: Phaser.GameObjects.Text;
 
   constructor() {
     super("RunScene");
@@ -116,6 +121,49 @@ export class RunScene extends Phaser.Scene {
     graphics.clear();
 
     graphics.fillStyle(0xffffff, 1);
+    graphics.fillCircle(16, 9, 7);
+    graphics.fillRoundedRect(11, 16, 10, 15, 3);
+    graphics.lineStyle(2, 0x101010, 1);
+    graphics.lineBetween(8, 20, 24, 20);
+    graphics.lineBetween(12, 31, 8, 35);
+    graphics.lineBetween(20, 31, 24, 35);
+    graphics.generateTexture("enemy_skeleton", 32, 38);
+    graphics.clear();
+
+    graphics.fillStyle(0xffffff, 1);
+    graphics.fillEllipse(18, 11, 30, 15);
+    graphics.fillCircle(31, 9, 5);
+    graphics.lineStyle(2, 0xffffff, 1);
+    graphics.lineBetween(4, 12, 0, 17);
+    graphics.generateTexture("enemy_grave_rat", 38, 24);
+    graphics.clear();
+
+    graphics.fillStyle(0xffffff, 1);
+    graphics.fillRoundedRect(7, 7, 34, 38, 8);
+    graphics.fillCircle(24, 9, 12);
+    graphics.lineStyle(3, 0x101010, 1);
+    graphics.lineBetween(13, 25, 35, 25);
+    graphics.generateTexture("enemy_rot_walker", 48, 52);
+    graphics.clear();
+
+    graphics.fillStyle(0xffffff, 0.82);
+    graphics.fillCircle(20, 16, 16);
+    graphics.fillTriangle(5, 20, 35, 20, 20, 43);
+    graphics.fillStyle(0x101010, 0.55);
+    graphics.fillCircle(14, 15, 3);
+    graphics.fillCircle(26, 15, 3);
+    graphics.generateTexture("enemy_ghost", 40, 46);
+    graphics.clear();
+
+    graphics.fillStyle(0xffffff, 1);
+    graphics.fillRoundedRect(6, 11, 40, 45, 8);
+    graphics.fillCircle(26, 13, 14);
+    graphics.fillStyle(0x101010, 0.9);
+    graphics.fillRect(14, 12, 24, 5);
+    graphics.generateTexture("enemy_bone_knight", 54, 62);
+    graphics.clear();
+
+    graphics.fillStyle(0xffffff, 1);
     graphics.fillCircle(18, 18, 16);
     graphics.lineStyle(2, 0x101010, 1);
     graphics.strokeCircle(18, 18, 16);
@@ -127,6 +175,13 @@ export class RunScene extends Phaser.Scene {
     graphics.lineStyle(1, 0x1a1714, 1);
     graphics.strokeTriangle(5, 2, 30, 8, 5, 14);
     graphics.generateTexture("knife", 34, 16);
+    graphics.clear();
+
+    graphics.fillStyle(0xf2ead0, 1);
+    graphics.fillTriangle(4, 4, 28, 11, 4, 18);
+    graphics.lineStyle(2, 0x201810, 1);
+    graphics.strokeTriangle(4, 4, 28, 11, 4, 18);
+    graphics.generateTexture("weapon_bone_knives", 32, 22);
     graphics.clear();
 
     graphics.fillStyle(0x69d7ff, 1);
@@ -223,6 +278,10 @@ export class RunScene extends Phaser.Scene {
     this.killText = this.add.text(0, 50, "", { fontSize: "16px", color: "#c9c0ad" });
     const xpBack = this.add.rectangle(24, 0, 100, 12, 0x10222a, 0.95).setOrigin(0, 0);
     this.xpFill = this.add.rectangle(24, 0, 100, 12, 0x55bde0, 1).setOrigin(0, 0);
+    this.weaponPanel = this.add.rectangle(24, 0, 224, 40, 0x111612, 0.88).setOrigin(0, 0);
+    this.weaponPanel.setStrokeStyle(1, 0x47513f, 0.9);
+    this.weaponIcon = this.add.image(0, 0, "weapon_bone_knives");
+    this.weaponText = this.add.text(0, 0, "", { fontSize: "15px", color: "#efe3c8" });
 
     this.hudObjects = [
       hpBack,
@@ -233,7 +292,10 @@ export class RunScene extends Phaser.Scene {
       this.bonesText,
       this.killText,
       xpBack,
-      this.xpFill
+      this.xpFill,
+      this.weaponPanel,
+      this.weaponIcon,
+      this.weaponText
     ];
 
     this.hudObjects.forEach((object) => object.setScrollFactor(0).setDepth(1000));
@@ -337,7 +399,7 @@ export class RunScene extends Phaser.Scene {
     const radius = Phaser.Math.Between(520, 860);
     const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * radius, 40, MAP_SIZE - 40);
     const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * radius, 40, MAP_SIZE - 40);
-    const enemy = this.enemies.get(x, y, "enemy") as EnemySprite | null;
+    const enemy = this.enemies.get(x, y, getEnemyTexture(definition.id)) as EnemySprite | null;
 
     if (!enemy) {
       return;
@@ -347,12 +409,15 @@ export class RunScene extends Phaser.Scene {
     enemy.hp = definition.hp;
     enemy.maxHp = definition.hp;
     enemy.spawnedAt = this.run.timeElapsed;
+    enemy.setTexture(getEnemyTexture(definition.id));
     enemy.setActive(true);
     enemy.setVisible(true);
     enemy.enableBody(true, x, y, true, true);
     enemy.setSize(definition.radius * 1.6, definition.radius * 1.6);
-    enemy.setDisplaySize(definition.radius * 2, definition.radius * 2);
+    const display = getEnemyDisplaySize(definition);
+    enemy.setDisplaySize(display.width, display.height);
     enemy.setTint(definition.color);
+    enemy.setAlpha(definition.id === "ghost" ? 0.72 : 1);
     enemy.setDepth(15);
   }
 
@@ -373,7 +438,14 @@ export class RunScene extends Phaser.Scene {
         direction.rotate(wobble);
       }
 
-      enemy.setVelocity(direction.x * enemy.def.speed, direction.y * enemy.def.speed);
+      const separation = this.calculateEnemySeparation(enemy);
+      const movement = direction.add(separation.scale(ENEMY_SEPARATION_STRENGTH));
+
+      if (movement.lengthSq() > 0) {
+        movement.normalize();
+      }
+
+      enemy.setVelocity(movement.x * enemy.def.speed, movement.y * enemy.def.speed);
 
       if (distance < PLAYER_RADIUS + enemy.def.radius && this.run.timeElapsed >= this.run.invulnerableUntil) {
         this.damagePlayer(enemy.def.damage);
@@ -391,6 +463,7 @@ export class RunScene extends Phaser.Scene {
     this.run.invulnerableUntil = this.run.timeElapsed + PLAYER_INVULNERABILITY_SECONDS;
     this.player.setTintFill(0xff5a54);
     this.cameras.main.shake(120, 0.006);
+    this.createBurst(this.player.x, this.player.y, 0xff5a54, 5, 22, 150);
     this.time.delayedCall(90, () => {
       if (this.status === "playing") {
         this.player.clearTint();
@@ -516,6 +589,9 @@ export class RunScene extends Phaser.Scene {
   private damageEnemy(enemy: EnemySprite, amount: number): void {
     enemy.hp -= amount;
     enemy.setTintFill(0xfff4d8);
+    if (Math.random() < 0.32) {
+      this.createBurst(enemy.x, enemy.y, 0xffe7b8, 2, 12, 90);
+    }
     this.time.delayedCall(55, () => {
       if (enemy.active) {
         enemy.setTint(enemy.def.color);
@@ -537,15 +613,8 @@ export class RunScene extends Phaser.Scene {
       this.spawnPickup("bones", x + Phaser.Math.Between(-10, 10), y + Phaser.Math.Between(-10, 10), def.bonesMin);
     }
 
-    const burst = this.add.circle(x, y, 5, 0x8f2620, 0.8).setDepth(12);
-    this.tweens.add({
-      targets: burst,
-      alpha: 0,
-      scale: 4,
-      duration: 180,
-      ease: "Quad.easeOut",
-      onComplete: () => burst.destroy()
-    });
+    this.createBurst(x, y, getDeathBurstColor(def.id), def.id === "rot_walker" ? 9 : 6, 34, 240);
+    this.createRingBurst(x, y, getDeathBurstColor(def.id), def.radius + 8);
   }
 
   private spawnPickup(type: PickupSprite["pickupType"], x: number, y: number, value: number): void {
@@ -565,8 +634,15 @@ export class RunScene extends Phaser.Scene {
     pickup.setVisible(true);
     pickup.enableBody(true, x, y, true, true);
     pickup.setDepth(10);
+    pickup.setScale(0.65);
     pickup.setVelocity(Phaser.Math.Between(-40, 40), Phaser.Math.Between(-40, 40));
     pickup.setDrag(260);
+    this.tweens.add({
+      targets: pickup,
+      scale: 1,
+      duration: 180,
+      ease: "Back.easeOut"
+    });
   }
 
   private updatePickups(dt: number): void {
@@ -596,6 +672,15 @@ export class RunScene extends Phaser.Scene {
   }
 
   private collectPickup(pickup: PickupSprite): void {
+    this.createBurst(
+      pickup.x,
+      pickup.y,
+      pickup.pickupType === "xp" ? 0x69d7ff : 0xe6d1a3,
+      pickup.pickupType === "xp" ? 4 : 5,
+      18,
+      140
+    );
+
     if (pickup.pickupType === "xp") {
       this.run.xp += pickup.value;
       pickup.disableBody(true, true);
@@ -605,6 +690,79 @@ export class RunScene extends Phaser.Scene {
 
     this.run.bonesCollected += pickup.value;
     pickup.disableBody(true, true);
+  }
+
+  private calculateEnemySeparation(enemy: EnemySprite): Phaser.Math.Vector2 {
+    const separation = new Phaser.Math.Vector2(0, 0);
+    let neighbors = 0;
+
+    for (const child of this.enemies.getChildren()) {
+      const other = child as EnemySprite;
+
+      if (!other.active || other === enemy) {
+        continue;
+      }
+
+      const minDistance = enemy.def.radius + other.def.radius + 6;
+      const offsetX = enemy.x - other.x;
+      const offsetY = enemy.y - other.y;
+      const distanceSq = offsetX * offsetX + offsetY * offsetY;
+
+      if (distanceSq <= 0 || distanceSq > minDistance * minDistance) {
+        continue;
+      }
+
+      const distance = Math.sqrt(distanceSq);
+      const force = 1 - distance / minDistance;
+      separation.x += (offsetX / distance) * force;
+      separation.y += (offsetY / distance) * force;
+      neighbors += 1;
+
+      if (neighbors >= ENEMY_SEPARATION_NEIGHBORS) {
+        break;
+      }
+    }
+
+    return separation;
+  }
+
+  private createBurst(
+    x: number,
+    y: number,
+    color: number,
+    count: number,
+    distance: number,
+    duration: number
+  ): void {
+    for (let index = 0; index < count; index += 1) {
+      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      const travel = Phaser.Math.Between(Math.floor(distance * 0.45), distance);
+      const particle = this.add.circle(x, y, Phaser.Math.Between(2, 4), color, 0.88).setDepth(16);
+
+      this.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * travel,
+        y: y + Math.sin(angle) * travel,
+        alpha: 0,
+        scale: 0.25,
+        duration,
+        ease: "Quad.easeOut",
+        onComplete: () => particle.destroy()
+      });
+    }
+  }
+
+  private createRingBurst(x: number, y: number, color: number, radius: number): void {
+    const ring = this.add.circle(x, y, radius, color, 0).setStrokeStyle(2, color, 0.82).setDepth(14);
+
+    this.tweens.add({
+      targets: ring,
+      alpha: 0,
+      scale: 2.2,
+      duration: 220,
+      ease: "Quad.easeOut",
+      onComplete: () => ring.destroy()
+    });
   }
 
   private checkLevelUp(): void {
@@ -881,6 +1039,23 @@ export class RunScene extends Phaser.Scene {
       .setText(`Kills ${this.run.kills}`)
       .setPosition(width - (compact ? 16 : 24), compact ? 84 : 50)
       .setOrigin(1, 0);
+
+    const weaponPanelWidth = compact ? Math.min(224, width - 32) : 224;
+    const weaponY = height - 82;
+    const weapon = getWeaponDefinition("bone_knives");
+    const projectileCount = (weapon.projectileCount ?? 1) + this.run.upgrades.projectileBonus;
+    const cooldownMultiplier = Math.max(
+      0.25,
+      1 / this.run.upgrades.attackSpeedMultiplier - this.run.upgrades.cooldownReduction
+    );
+    const cooldown = weapon.cooldown * cooldownMultiplier;
+
+    this.weaponPanel.setPosition(compact ? 16 : 24, weaponY);
+    this.weaponPanel.width = weaponPanelWidth;
+    this.weaponIcon.setPosition((compact ? 16 : 24) + 24, weaponY + 20);
+    this.weaponText
+      .setText(`Bone Knives  x${projectileCount}  ${cooldown.toFixed(1)}s`)
+      .setPosition((compact ? 16 : 24) + 48, weaponY + 11);
   }
 }
 
@@ -906,4 +1081,79 @@ function getRarityColor(rarity: UpgradeDefinition["rarity"]): number {
 
 function colorToCss(color: number): string {
   return `#${color.toString(16).padStart(6, "0")}`;
+}
+
+function getEnemyTexture(enemyId: string): string {
+  if (enemyId === "skeleton") {
+    return "enemy_skeleton";
+  }
+
+  if (enemyId === "grave_rat") {
+    return "enemy_grave_rat";
+  }
+
+  if (enemyId === "rot_walker") {
+    return "enemy_rot_walker";
+  }
+
+  if (enemyId === "ghost") {
+    return "enemy_ghost";
+  }
+
+  if (enemyId === "bone_knight") {
+    return "enemy_bone_knight";
+  }
+
+  return "enemy";
+}
+
+function getEnemyDisplaySize(definition: EnemyDefinition): { width: number; height: number } {
+  if (definition.id === "grave_rat") {
+    return {
+      width: definition.radius * 3,
+      height: definition.radius * 1.8
+    };
+  }
+
+  if (definition.id === "rot_walker") {
+    return {
+      width: definition.radius * 2.25,
+      height: definition.radius * 2.55
+    };
+  }
+
+  if (definition.id === "ghost") {
+    return {
+      width: definition.radius * 2.25,
+      height: definition.radius * 2.65
+    };
+  }
+
+  if (definition.id === "bone_knight") {
+    return {
+      width: definition.radius * 2.2,
+      height: definition.radius * 2.55
+    };
+  }
+
+  return {
+    width: definition.radius * 2,
+    height: definition.radius * 2.35
+  };
+}
+
+function getDeathBurstColor(enemyId: string): number {
+  if (enemyId === "grave_rat") {
+    return 0x9b4635;
+  }
+
+  if (enemyId === "rot_walker") {
+    return 0x6f8c5c;
+  }
+
+  if (enemyId === "ghost") {
+    return 0x8fdfff;
+  }
+
+  return 0x8f2620;
 }
