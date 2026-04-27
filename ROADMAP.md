@@ -12,7 +12,9 @@
 - Bone Knives с автоматическим таргетингом.
 - Все 4 MVP-оружия: Bone Knives, Holy Candle, Grave Bell, Crow Swarm.
 - Все 5 MVP-врагов в забеге: Skeleton, Grave Rat, Rot Walker, Ghost, Bone Knight.
-- Scripted Bone Knight на 5:00 и Bone Knight Captain на 9:30.
+- Scripted Bone Knight на 5:00 и Bone Knight Captain на 10:00.
+- Победа только после убийства финального Bone Knight Captain.
+- Victory screen и boss HP bar.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
 - Базовые run-upgrades и weapon-specific upgrades.
 - Basic rarity weighting для карт: common, uncommon, rare.
@@ -20,7 +22,7 @@
 
 Ограничения версии:
 - Нет полного 10-минутного режима.
-- Нет victory, boss HP bar, мета-прогрессии, настроек, звуков и финального juice.
+- Нет мета-прогрессии, настроек, звуков и финального juice.
 - Визуал намеренно серый и прототипный.
 
 ## Принципы разработки
@@ -59,7 +61,7 @@ Definition of Done:
 - [x] Реализовать Crow Swarm.
 - [x] Добавить Ghost с волнообразным движением.
 - [x] Добавить Bone Knight как элиту.
-- [x] Добавить Bone Knight Captain на 9:30.
+- [x] Добавить Bone Knight Captain на 10:00.
 - [x] Добавить weapon-specific upgrades.
 - [x] Довести список run-upgrades минимум до 20 карт.
 - [x] Добавить basic rarity weighting: common, uncommon, rare.
@@ -73,11 +75,11 @@ Definition of Done:
 
 Цель: сделать полноценный 10-минутный забег.
 
-- [ ] Добавить timer victory condition на 10:00.
-- [ ] Добавить victory screen.
+- [x] Добавить финального босса на 10:00 и победу после его убийства.
+- [x] Добавить victory screen.
 - [ ] Настроить 10-минутную budget curve.
-- [ ] Добавить scripted spawn элит на 5:00 и 9:30.
-- [ ] Добавить boss HP bar.
+- [x] Добавить scripted spawn элит на 5:00 и 10:00.
+- [x] Добавить boss HP bar.
 - [ ] Добавить hard caps для врагов, снарядов и pickups.
 - [ ] Добавить pickup merging при переполнении лимита.
 - [ ] Проверить повторный запуск нескольких забегов подряд.
@@ -151,11 +153,11 @@ Definition of Done:
 Следующий рабочий срез: Full Night Mode.
 
 Порядок задач:
-1. Добавить victory condition на 10:00.
-2. Добавить victory screen.
-3. Настроить 10-минутную budget curve.
-4. Добавить boss HP bar для Bone Knight / Captain.
-5. Проверить death/victory/retry loop на нескольких забегах.
+1. Настроить 10-минутную budget curve.
+2. Проверить death/victory/retry loop на нескольких забегах.
+3. Проверить баланс финального Bone Knight Captain.
+4. Добавить pickup merging при переполнении лимита.
+5. Проверить повторный запуск нескольких забегов подряд.
 
 ## После MVP
 

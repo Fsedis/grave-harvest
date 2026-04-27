@@ -40,7 +40,7 @@ const SCRIPTED_ENEMY_SPAWNS: ScriptedEnemySpawn[] = [
     id: "bone_knight_captain",
     enemyId: "bone_knight",
     name: "Bone Knight Captain",
-    time: 570,
+    time: 600,
     hpMultiplier: 1.75,
     scaleMultiplier: 1.22,
     color: 0xd1c07d

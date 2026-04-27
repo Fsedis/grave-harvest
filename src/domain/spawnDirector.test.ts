@@ -66,12 +66,13 @@ describe("getScriptedEnemySpawns", () => {
     expect(getScriptedEnemySpawns(299.9, 300).map((spawn) => spawn.id)).toEqual(["bone_knight_elite"]);
   });
 
-  it("emits the final captain at 9:30 without duplicating past events", () => {
-    const captain = getScriptedEnemySpawns(569.9, 570)[0];
+  it("emits the final captain at 10:00 without duplicating past events", () => {
+    expect(getScriptedEnemySpawns(569.9, 570)).toEqual([]);
+    const captain = getScriptedEnemySpawns(599.9, 600)[0];
 
     expect(captain.id).toBe("bone_knight_captain");
     expect(captain.enemyId).toBe("bone_knight");
     expect(captain.hpMultiplier).toBeGreaterThan(1);
-    expect(getScriptedEnemySpawns(570, 570.5)).toEqual([]);
+    expect(getScriptedEnemySpawns(600, 600.5)).toEqual([]);
   });
 });

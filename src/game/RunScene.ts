@@ -7,6 +7,7 @@ import {
   pickEnemyForBudget,
   type ScriptedEnemySpawn
 } from "../domain/spawnDirector";
+import { hasWonNight } from "../domain/runRules";
 import {
   applyUpgrade,
   createInitialUpgradeState,
@@ -27,7 +28,7 @@ const PLAYER_INVULNERABILITY_SECONDS = 0.35;
 const ENEMY_SEPARATION_STRENGTH = 0.92;
 const ENEMY_SEPARATION_NEIGHBORS = 8;
 
-type RunStatus = "menu" | "playing" | "paused" | "level_up" | "game_over";
+type RunStatus = "menu" | "playing" | "paused" | "level_up" | "game_over" | "victory";
 
 type EnemySprite = Phaser.Physics.Arcade.Image & {
   def: EnemyDefinition;
@@ -42,6 +43,7 @@ type EnemySprite = Phaser.Physics.Arcade.Image & {
   baseDisplayWidth: number;
   baseDisplayHeight: number;
   baseTint: number;
+  scriptedSpawnId: string;
 };
 
 type ProjectileSprite = Phaser.Physics.Arcade.Image & {
@@ -67,6 +69,7 @@ type RunStats = {
   spawnBudget: number;
   weaponCooldowns: Record<string, number>;
   invulnerableUntil: number;
+  finalBossKilled: boolean;
   upgrades: UpgradeState;
 };
 
@@ -83,6 +86,7 @@ export class RunScene extends Phaser.Scene {
   private overlayObjects: Phaser.GameObjects.GameObject[] = [];
   private hudObjects: Array<Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text> = [];
   private hpFill!: Phaser.GameObjects.Rectangle;
+  private xpBack!: Phaser.GameObjects.Rectangle;
   private xpFill!: Phaser.GameObjects.Rectangle;
   private hpText!: Phaser.GameObjects.Text;
   private timerText!: Phaser.GameObjects.Text;
@@ -92,6 +96,10 @@ export class RunScene extends Phaser.Scene {
   private weaponPanel!: Phaser.GameObjects.Rectangle;
   private weaponIcons: Phaser.GameObjects.Image[] = [];
   private weaponTexts: Phaser.GameObjects.Text[] = [];
+  private bossHpBack!: Phaser.GameObjects.Rectangle;
+  private bossHpFill!: Phaser.GameObjects.Rectangle;
+  private bossHpText!: Phaser.GameObjects.Text;
+  private activeFinalBoss: EnemySprite | null = null;
 
   constructor() {
     super("RunScene");
@@ -300,7 +308,7 @@ export class RunScene extends Phaser.Scene {
     this.input.keyboard!.on("keydown-TWO", () => this.pickUpgradeByIndex(1));
     this.input.keyboard!.on("keydown-THREE", () => this.pickUpgradeByIndex(2));
     this.input.keyboard!.on("keydown-ENTER", () => {
-      if (this.status === "menu" || this.status === "game_over") {
+      if (this.status === "menu" || this.status === "game_over" || this.status === "victory") {
         this.startRun();
       }
     });
@@ -325,10 +333,18 @@ export class RunScene extends Phaser.Scene {
     });
     this.bonesText = this.add.text(0, 24, "", { fontSize: "18px", color: "#e5d39f" });
     this.killText = this.add.text(0, 50, "", { fontSize: "16px", color: "#c9c0ad" });
-    const xpBack = this.add.rectangle(24, 0, 100, 12, 0x10222a, 0.95).setOrigin(0, 0);
+    this.xpBack = this.add.rectangle(24, 0, 100, 12, 0x10222a, 0.95).setOrigin(0, 0);
     this.xpFill = this.add.rectangle(24, 0, 100, 12, 0x55bde0, 1).setOrigin(0, 0);
     this.weaponPanel = this.add.rectangle(24, 0, 276, 40, 0x111612, 0.88).setOrigin(0, 0);
     this.weaponPanel.setStrokeStyle(1, 0x47513f, 0.9);
+    this.bossHpBack = this.add.rectangle(0, 0, 440, 14, 0x261615, 0.95).setOrigin(0, 0);
+    this.bossHpBack.setStrokeStyle(1, 0x6b5a3c, 0.95);
+    this.bossHpFill = this.add.rectangle(0, 0, 440, 14, 0xb44a3c, 1).setOrigin(0, 0);
+    this.bossHpText = this.add.text(0, 0, "", {
+      fontSize: "16px",
+      color: "#f2dfb0",
+      fontStyle: "700"
+    });
     this.weaponIcons = [];
     this.weaponTexts = [];
 
@@ -345,11 +361,14 @@ export class RunScene extends Phaser.Scene {
       this.timerText,
       this.bonesText,
       this.killText,
-      xpBack,
+      this.xpBack,
       this.xpFill,
       this.weaponPanel,
       ...this.weaponIcons,
-      ...this.weaponTexts
+      ...this.weaponTexts,
+      this.bossHpBack,
+      this.bossHpFill,
+      this.bossHpText
     ];
 
     this.hudObjects.forEach((object) => object.setScrollFactor(0).setDepth(1000));
@@ -375,9 +394,11 @@ export class RunScene extends Phaser.Scene {
         bone_knives: 0.35
       },
       invulnerableUntil: 0,
+      finalBossKilled: false,
       upgrades: upgradeState
     };
 
+    this.activeFinalBoss = null;
     this.player.enableBody(true, MAP_SIZE / 2, MAP_SIZE / 2, true, true);
     this.player.clearTint();
     this.player.setVelocity(0, 0);
@@ -464,6 +485,10 @@ export class RunScene extends Phaser.Scene {
     const enemy = this.spawnEnemyInstance(definition, spawn);
 
     if (enemy) {
+      if (spawn.id === "bone_knight_captain") {
+        this.activeFinalBoss = enemy;
+      }
+
       this.createRingBurst(enemy.x, enemy.y, spawn.color, definition.radius * 2.2 * spawn.scaleMultiplier);
       this.showWorldText(enemy.x, enemy.y - definition.radius * 2.8, spawn.name, "#f1dfaa", 24);
       this.cameras.main.shake(spawn.id === "bone_knight_captain" ? 260 : 160, 0.005);
@@ -475,6 +500,11 @@ export class RunScene extends Phaser.Scene {
     const radius = scripted ? Phaser.Math.Between(560, 720) : Phaser.Math.Between(520, 860);
     const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * radius, 40, MAP_SIZE - 40);
     const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * radius, 40, MAP_SIZE - 40);
+
+    if (scripted && this.enemies.countActive(true) >= HARD_ENEMY_CAP) {
+      this.freeEnemySlotForScriptedSpawn();
+    }
+
     const enemy = this.enemies.get(x, y, getEnemyTexture(definition.id)) as EnemySprite | null;
 
     if (!enemy) {
@@ -495,6 +525,7 @@ export class RunScene extends Phaser.Scene {
     enemy.baseDisplayWidth = display.width * scaleMultiplier;
     enemy.baseDisplayHeight = display.height * scaleMultiplier;
     enemy.baseTint = scripted?.color ?? definition.color;
+    enemy.scriptedSpawnId = scripted?.id ?? "";
     enemy.setTexture(getEnemyTexture(definition.id));
     enemy.setActive(true);
     enemy.setVisible(true);
@@ -506,6 +537,17 @@ export class RunScene extends Phaser.Scene {
     enemy.setDepth(scripted ? 17 : 15);
 
     return enemy;
+  }
+
+  private freeEnemySlotForScriptedSpawn(): void {
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as EnemySprite;
+
+      if (enemy.active && !enemy.isElite) {
+        enemy.disableBody(true, true);
+        return;
+      }
+    }
   }
 
   private updateEnemies(dt: number): void {
@@ -858,6 +900,7 @@ export class RunScene extends Phaser.Scene {
   private killEnemy(enemy: EnemySprite): void {
     const { x, y, def } = enemy;
     const burstScale = enemy.isElite ? 1.7 : 1;
+    const killedFinalBoss = enemy.scriptedSpawnId === "bone_knight_captain";
     enemy.disableBody(true, true);
     this.run.kills += 1;
     this.spawnPickup("xp", x, y, def.xpDrop);
@@ -880,6 +923,15 @@ export class RunScene extends Phaser.Scene {
       240
     );
     this.createRingBurst(x, y, getDeathBurstColor(def.id), (def.radius + 8) * burstScale);
+
+    if (killedFinalBoss) {
+      this.run.finalBossKilled = true;
+      this.activeFinalBoss = null;
+
+      if (hasWonNight(this.run)) {
+        this.winRun();
+      }
+    }
   }
 
   private spawnPickup(type: PickupSprite["pickupType"], x: number, y: number, value: number): void {
@@ -1101,10 +1153,18 @@ export class RunScene extends Phaser.Scene {
     this.showGameOverOverlay();
   }
 
+  private winRun(): void {
+    this.status = "victory";
+    this.player.setVelocity(0, 0);
+    this.physics.pause();
+    this.showVictoryOverlay();
+  }
+
   private clearEntities(): void {
     this.enemies.clear(true, true);
     this.projectiles.clear(true, true);
     this.pickups.clear(true, true);
+    this.activeFinalBoss = null;
   }
 
   private showMainMenu(): void {
@@ -1219,6 +1279,45 @@ export class RunScene extends Phaser.Scene {
     this.addOverlayButton(width / 2, height / 2 + 102, 210, 48, "Main Menu", () => this.showMainMenu());
   }
 
+  private showVictoryOverlay(): void {
+    this.clearOverlay();
+    this.setHudVisible(false);
+    const { width, height } = this.scale;
+    const retainedBones = calculateRetainedBones({
+      collected: this.run.bonesCollected,
+      timeElapsed: this.run.timeElapsed,
+      won: true
+    });
+
+    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.74);
+    this.addOverlayText(width / 2, height / 2 - 156, "Night Survived", width < 520 ? 34 : 44, "#f4ead7", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 44);
+    this.addOverlayText(width / 2, height / 2 - 96, "The Captain is dead.", 22, "#f1dfaa", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 48);
+    this.addOverlayText(
+      width / 2,
+      height / 2 - 42,
+      `Time ${formatTimer(this.run.timeElapsed)}   Kills ${this.run.kills}   Level ${this.run.level}`,
+      22,
+      "#d9cfba"
+    )
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 48);
+    this.addOverlayText(
+      width / 2,
+      height / 2 + 2,
+      `Bones collected ${this.run.bonesCollected}   Retained ${retainedBones}`,
+      20,
+      "#e5d39f"
+    )
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 48);
+    this.addOverlayButton(width / 2, height / 2 + 76, 210, 52, "Next Run", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 140, 210, 48, "Main Menu", () => this.showMainMenu());
+  }
+
   private addOverlayButton(
     x: number,
     y: number,
@@ -1306,9 +1405,8 @@ export class RunScene extends Phaser.Scene {
     this.xpFill.setPosition(24, height - 28);
     this.xpFill.width = (width - 48) * xpRatio;
 
-    const xpBack = this.hudObjects[7] as Phaser.GameObjects.Rectangle;
-    xpBack.setPosition(24, height - 28);
-    xpBack.width = width - 48;
+    this.xpBack.setPosition(24, height - 28);
+    this.xpBack.width = width - 48;
 
     this.hpText.setText(`HP ${Math.ceil(this.run.hp)} / ${this.run.upgrades.maxHp}`);
     this.hpText.setPosition(hpX, hpY + 22);
@@ -1357,6 +1455,26 @@ export class RunScene extends Phaser.Scene {
         .setText(formatWeaponHudLine(weaponId, stats))
         .setPosition(weaponX + 44, weaponY + 13 + index * 28);
     });
+
+    const bossVisible = Boolean(this.activeFinalBoss?.active);
+    this.bossHpBack.setVisible(bossVisible);
+    this.bossHpFill.setVisible(bossVisible);
+    this.bossHpText.setVisible(bossVisible);
+
+    if (this.activeFinalBoss?.active) {
+      const bossBarWidth = compact ? Math.min(width - 48, 360) : 440;
+      const bossRatio = Phaser.Math.Clamp(this.activeFinalBoss.hp / this.activeFinalBoss.maxHp, 0, 1);
+      const bossY = compact ? 112 : 64;
+      const bossX = width / 2 - bossBarWidth / 2;
+      this.bossHpBack.setPosition(bossX, bossY);
+      this.bossHpBack.width = bossBarWidth;
+      this.bossHpFill.setPosition(bossX, bossY);
+      this.bossHpFill.width = bossBarWidth * bossRatio;
+      this.bossHpText
+        .setText(`Bone Knight Captain  ${Math.ceil(this.activeFinalBoss.hp)} / ${this.activeFinalBoss.maxHp}`)
+        .setPosition(width / 2, bossY + 18)
+        .setOrigin(0.5, 0);
+    }
   }
 }
 
