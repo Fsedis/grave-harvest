@@ -61,6 +61,7 @@ import {
   type UpgradeDefinition,
   type UpgradeState
 } from "../domain/upgrades";
+import { AudioManager } from "./audio/AudioManager";
 
 const MAP_SIZE = 2200;
 const PLAYER_RADIUS = 16;
@@ -182,6 +183,7 @@ export class RunScene extends Phaser.Scene {
   private saveData: SaveData = createDefaultSaveData();
   private runEndSummary: RunEndSummary | null = null;
   private settingsReturnTarget: SettingsReturnTarget = "menu";
+  private audio!: AudioManager;
 
   constructor() {
     super("RunScene");
@@ -218,10 +220,12 @@ export class RunScene extends Phaser.Scene {
     }
 
     this.saveData = createDefaultSaveData();
+    this.audio.updateSettings(this.saveData.settings);
   }
 
   create(): void {
     this.loadSaveData();
+    this.audio = new AudioManager(this.saveData.settings);
     this.createTextures();
     this.createArena();
     this.createGroups();
@@ -528,6 +532,8 @@ export class RunScene extends Phaser.Scene {
   }
 
   private startRun(): void {
+    this.audio.stopRunMusic();
+    this.audio.updateSettings(this.saveData.settings);
     this.clearOverlay();
     this.clearEntities();
     this.currentUpgradeOptions = [];
@@ -563,11 +569,13 @@ export class RunScene extends Phaser.Scene {
     this.status = "playing";
     this.setHudVisible(true);
     this.layoutHud();
+    this.startRunAudio();
   }
 
   private pauseRun(): void {
     this.status = "paused";
     this.physics.pause();
+    this.audio.stopRunMusic();
     this.setLowHpWarningVisible(false);
     this.showPauseOverlay();
   }
@@ -576,6 +584,18 @@ export class RunScene extends Phaser.Scene {
     this.clearOverlay();
     this.status = "playing";
     this.physics.resume();
+    this.startRunAudio();
+  }
+
+  private startRunAudio(): void {
+    void this.audio
+      .unlock()
+      .catch(() => undefined)
+      .then(() => {
+        if (this.status === "playing") {
+          this.audio.startRunMusic();
+        }
+      });
   }
 
   private updatePlayerMovement(): void {
@@ -649,6 +669,7 @@ export class RunScene extends Phaser.Scene {
       this.createRingBurst(enemy.x, enemy.y, spawn.color, definition.radius * 2.2 * spawn.scaleMultiplier);
       this.showWorldText(enemy.x, enemy.y - definition.radius * 2.8, spawn.name, "#f1dfaa", 24);
       this.shakeCamera(spawn.id === "bone_knight_captain" ? 260 : 160, 0.005);
+      this.audio.playSfx("boss_spawn");
     }
   }
 
@@ -781,6 +802,7 @@ export class RunScene extends Phaser.Scene {
     this.run.invulnerableUntil = this.run.timeElapsed + PLAYER_INVULNERABILITY_SECONDS;
     this.player.setTintFill(0xff5a54);
     this.shakeCamera(120, 0.006);
+    this.audio.playSfx("player_hit");
     this.createBurst(this.player.x, this.player.y, 0xff5a54, 5, 22, 150);
     this.time.delayedCall(90, () => {
       if (this.status === "playing") {
@@ -988,6 +1010,7 @@ export class RunScene extends Phaser.Scene {
     projectile.setDepth(18);
     projectile.setRotation(angle);
     projectile.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+    this.audio.playSfx("knife_shot");
   }
 
   private tickHolyCandle(stats: DerivedWeaponStats): void {
@@ -1036,6 +1059,7 @@ export class RunScene extends Phaser.Scene {
   private applyBellPulse(pulse: BellPulseSpec): void {
     this.createDamageRadiusRing(this.player.x, this.player.y, 0xcdbb8d, pulse.radius);
     this.shakeCamera(pulse.index === 0 ? 80 : 110, pulse.index === 0 ? 0.003 : 0.004);
+    this.audio.playSfx("bell_pulse");
 
     for (const child of this.enemies.getChildren()) {
       const enemy = child as EnemySprite;
@@ -1106,6 +1130,7 @@ export class RunScene extends Phaser.Scene {
     projectile.setDepth(19);
     projectile.setRotation(angle);
     projectile.setVelocity(Math.cos(angle) * projectile.homingSpeed, Math.sin(angle) * projectile.homingSpeed);
+    this.audio.playSfx("crow_attack");
   }
 
   private updateProjectiles(dt: number): void {
@@ -1218,6 +1243,7 @@ export class RunScene extends Phaser.Scene {
 
   private damageEnemy(enemy: EnemySprite, amount: number, feedback: DamageFeedbackOptions = {}): void {
     enemy.hp -= amount;
+    this.audio.playSfx("enemy_hit");
     const important = Boolean(feedback.important || enemy.isElite);
     if (feedback.showNumber !== false) {
       this.maybeShowDamageNumber(enemy, amount, important, feedback.color);
@@ -1315,6 +1341,7 @@ export class RunScene extends Phaser.Scene {
       240
     );
     this.createRingBurst(x, y, getDeathBurstColor(def.id), (def.radius + 8) * burstScale);
+    this.audio.playSfx("enemy_death");
 
     if (killedFinalBoss) {
       this.run.finalBossKilled = true;
@@ -1418,6 +1445,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   private collectPickup(pickup: PickupSprite): void {
+    this.audio.playSfx(pickup.pickupType === "xp" ? "xp_pickup" : "bones_pickup");
     this.createBurst(
       pickup.x,
       pickup.y,
@@ -1568,6 +1596,7 @@ export class RunScene extends Phaser.Scene {
     this.run.xp -= this.run.xpToNext;
     this.run.level += 1;
     this.run.xpToNext = xpRequired(this.run.level);
+    this.audio.playSfx("level_up");
     this.createLevelUpFlash();
     this.status = "level_up";
     this.player.setVelocity(0, 0);
@@ -1606,6 +1635,8 @@ export class RunScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
     this.player.setTint(0x8a1d1d);
     this.physics.pause();
+    this.audio.stopRunMusic();
+    this.audio.playSfx("death");
     this.clearDamageNumbers();
     this.setLowHpWarningVisible(false);
     this.activeFinalBoss = null;
@@ -1618,6 +1649,8 @@ export class RunScene extends Phaser.Scene {
     this.status = "victory";
     this.player.setVelocity(0, 0);
     this.physics.pause();
+    this.audio.stopRunMusic();
+    this.audio.playSfx("victory");
     this.clearDamageNumbers();
     this.setLowHpWarningVisible(false);
     this.activeFinalBoss = null;
@@ -1659,6 +1692,7 @@ export class RunScene extends Phaser.Scene {
   private showMainMenu(): void {
     this.status = "menu";
     this.physics.pause();
+    this.audio.stopRunMusic();
     this.setHudVisible(false);
     this.clearDamageNumbers();
     this.clearOverlay();
@@ -1908,8 +1942,9 @@ export class RunScene extends Phaser.Scene {
 
     const { width, height } = this.scale;
     const panelWidth = Math.min(width - 48, 620);
-    const titleY = height / 2 - 148;
-    const startY = height / 2 - 48;
+    const titleY = 72;
+    const startY = 166;
+    const rowGap = 60;
 
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.8);
     this.addOverlayText(width / 2, titleY, "Настройки", width < 520 ? 32 : 42, "#f4ead7", "700")
@@ -1929,15 +1964,39 @@ export class RunScene extends Phaser.Scene {
     );
     this.addSettingsToggle(
       width / 2,
-      startY + 72,
+      startY + rowGap,
       panelWidth,
       "Числа урона",
       this.saveData.settings.damageNumbers,
       () => this.updateGameSettings({ damageNumbers: !this.saveData.settings.damageNumbers })
     );
+    this.addVolumeControl(
+      width / 2,
+      startY + rowGap * 2,
+      panelWidth,
+      "Общая громкость",
+      this.saveData.settings.masterVolume,
+      (value) => this.updateGameSettings({ masterVolume: value })
+    );
+    this.addVolumeControl(
+      width / 2,
+      startY + rowGap * 3,
+      panelWidth,
+      "Звуки",
+      this.saveData.settings.sfxVolume,
+      (value) => this.updateGameSettings({ sfxVolume: value })
+    );
+    this.addVolumeControl(
+      width / 2,
+      startY + rowGap * 4,
+      panelWidth,
+      "Музыка",
+      this.saveData.settings.musicVolume,
+      (value) => this.updateGameSettings({ musicVolume: value })
+    );
 
-    this.addOverlayButton(width / 2 - 112, height / 2 + 136, 150, 46, "Назад", () => this.closeSettingsOverlay());
-    this.addOverlayButton(width / 2 + 112, height / 2 + 136, 210, 46, "Сбросить прогресс", () =>
+    this.addOverlayButton(width / 2 - 112, height - 54, 150, 46, "Назад", () => this.closeSettingsOverlay());
+    this.addOverlayButton(width / 2 + 112, height - 54, 210, 46, "Сбросить прогресс", () =>
       this.showResetProgressConfirmOverlay()
     );
   }
@@ -1945,6 +2004,7 @@ export class RunScene extends Phaser.Scene {
   private updateGameSettings(patch: Partial<SettingsData>): void {
     const hadDamageNumbers = this.saveData.settings.damageNumbers;
     this.saveData = updateSettings(this.saveData, patch);
+    this.audio.updateSettings(this.saveData.settings);
     this.persistSaveData();
 
     if (hadDamageNumbers && !this.saveData.settings.damageNumbers) {
@@ -2020,6 +2080,47 @@ export class RunScene extends Phaser.Scene {
       .setWordWrapWidth(width - toggleWidth - 60);
     this.addOverlayText(toggleX, y, value ? "Вкл" : "Выкл", 18, value ? "#17140f" : "#c9c0ad", "700")
       .setOrigin(0.5);
+  }
+
+  private addVolumeControl(
+    x: number,
+    y: number,
+    width: number,
+    label: string,
+    value: number,
+    onChange: (value: number) => void
+  ): void {
+    const clampedValue = Phaser.Math.Clamp(value, 0, 1);
+    const card = this.addOverlayRectangle(x, y, width, 56, 0x171c17, 0.97);
+    card.setStrokeStyle(1, 0x44503e, 0.9);
+
+    const leftX = x - width / 2 + 20;
+    const minusX = x + width / 2 - 198;
+    const trackX = x + width / 2 - 128;
+    const plusX = x + width / 2 - 58;
+    const valueX = x + width / 2 - 18;
+    const trackWidth = 108;
+    const fillWidth = Math.max(2, trackWidth * clampedValue);
+
+    this.addOverlayText(leftX, y, label, 20, "#f4ead7", "700")
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(width - 310);
+    this.addMiniSettingsButton(minusX, y, "-", () => onChange(roundVolume(clampedValue - 0.1)));
+    this.addOverlayRectangle(trackX, y, trackWidth, 8, 0x4b4438, 1);
+    this.addOverlayRectangle(trackX - trackWidth / 2 + fillWidth / 2, y, fillWidth, 8, 0xc9b46a, 1);
+    this.addMiniSettingsButton(plusX, y, "+", () => onChange(roundVolume(clampedValue + 0.1)));
+    this.addOverlayText(valueX, y, `${Math.round(clampedValue * 100)}%`, 16, "#e5d39f", "700")
+      .setOrigin(0.5);
+  }
+
+  private addMiniSettingsButton(x: number, y: number, label: string, onClick: () => void): void {
+    const button = this.addOverlayRectangle(x, y, 36, 32, 0xc9b46a, 1);
+    button.setStrokeStyle(2, 0x4a3921, 1);
+    button.setInteractive({ useHandCursor: true });
+    button.on("pointerover", () => button.setFillStyle(0xe1cd7d, 1));
+    button.on("pointerout", () => button.setFillStyle(0xc9b46a, 1));
+    button.on("pointerdown", onClick);
+    this.addOverlayText(x, y - 1, label, 20, "#17140f", "700").setOrigin(0.5);
   }
 
   private addOverlayButton(
@@ -2264,6 +2365,10 @@ function formatRarityLabel(rarity: UpgradeDefinition["rarity"]): string {
 
 function colorToCss(color: number): string {
   return `#${color.toString(16).padStart(6, "0")}`;
+}
+
+function roundVolume(value: number): number {
+  return Phaser.Math.Clamp(Math.round(value * 10) / 10, 0, 1);
 }
 
 function getWeaponIconTexture(weaponId: string): string {

@@ -18,6 +18,7 @@
 - Damage-radius rings для Holy Candle и Grave Bell совпадают с реальным радиусом урона.
 - Damage numbers с лимитом, low HP warning и level-up flash.
 - Settings screen с сохранёнными переключателями тряски экрана и чисел урона.
+- WebAudio SFX, level-up sting и run-only ambient loop с настройками громкости.
 - Видимый UI переведён на русский.
 - Crow Swarm преследует цель и ретаргетится, если цель умерла.
 - Особые weapon-upgrades работают как боевые эффекты: второй удар колокола, ожог свечи и кровотечение ворон.
@@ -31,7 +32,7 @@
 - Чистая доменная логика с тестами.
 
 Ограничения версии:
-- Нет звуков и финального juice.
+- Нет финального juice и внешних аудио-ассетов.
 - Визуал намеренно серый и прототипный.
 
 ## Принципы разработки
@@ -132,9 +133,9 @@ Definition of Done:
 - [x] Добавить level-up flash.
 - [x] Добавить screen shake с настройкой on/off.
 - [x] Добавить damage numbers с настройкой on/off.
-- [ ] Добавить level-up sting.
-- [ ] Добавить SFX для shot, hit, death, pickup, level-up, player hit.
-- [ ] Добавить простую ambient/music loop.
+- [x] Добавить level-up sting.
+- [x] Добавить SFX для shot, hit, death, pickup, level-up, player hit.
+- [x] Добавить простую ambient/music loop.
 - [ ] Улучшить pause screen.
 - [x] Добавить settings screen.
 - [ ] Улучшить визуальную читаемость арены.
@@ -164,14 +165,14 @@ Definition of Done:
 
 ## Ближайший фокус
 
-Следующий рабочий срез: SFX + Music Pass.
+Следующий рабочий срез: Pause + First-Run UX.
 
 Порядок задач:
-1. Добавить SFX для shot, hit, death, pickup, level-up, player hit.
-2. Добавить простую ambient/music loop.
-3. Добавить volume-настройки поверх готового settings screen.
-4. Улучшить pause screen и first-run hints.
-5. Пройти первый балансный full-run после звукового feedback.
+1. Улучшить pause screen.
+2. Добавить короткие first-run hints.
+3. Улучшить визуальную читаемость арены.
+4. Пройти первый балансный full-run после звукового feedback.
+5. После ручного full-run перейти к MVP Balance And Release.
 
 ## После MVP
 

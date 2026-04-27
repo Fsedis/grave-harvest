@@ -26,7 +26,10 @@ describe("save system", () => {
   it("includes enabled feedback settings in default save data", () => {
     expect(createDefaultSaveData().settings).toEqual({
       screenShake: true,
-      damageNumbers: true
+      damageNumbers: true,
+      masterVolume: 0.8,
+      sfxVolume: 0.75,
+      musicVolume: 0.35
     });
   });
 
@@ -65,12 +68,40 @@ describe("save system", () => {
         ...createDefaultSaveData(),
         settings: {
           screenShake: "no",
-          damageNumbers: null
+          damageNumbers: null,
+          masterVolume: "loud",
+          sfxVolume: Number.NaN,
+          musicVolume: undefined
         }
       })
     );
 
     expect(loadSave(storage).settings).toEqual(createDefaultSettings());
+  });
+
+  it("clamps numeric volume settings to the valid range", () => {
+    const storage = createMemoryStorage();
+    storage.setItem(
+      SAVE_KEY,
+      JSON.stringify({
+        ...createDefaultSaveData(),
+        settings: {
+          screenShake: false,
+          damageNumbers: true,
+          masterVolume: 1.4,
+          sfxVolume: -0.2,
+          musicVolume: 0.5
+        }
+      })
+    );
+
+    expect(loadSave(storage).settings).toEqual({
+      screenShake: false,
+      damageNumbers: true,
+      masterVolume: 1,
+      sfxVolume: 0,
+      musicVolume: 0.5
+    });
   });
 
   it("persists and loads save data roundtrip", () => {
@@ -116,11 +147,26 @@ describe("save system", () => {
       ...save,
       settings: {
         screenShake: true,
-        damageNumbers: false
+        damageNumbers: false,
+        masterVolume: 0.8,
+        sfxVolume: 0.75,
+        musicVolume: 0.35
       }
     });
     expect(save.settings).toEqual(createDefaultSettings());
     expect(updated).not.toBe(save);
+  });
+
+  it("updates volume settings without mutating the source save", () => {
+    const save = createDefaultSaveData();
+    const updated = updateSettings(save, { masterVolume: 0.4, musicVolume: 0.9 });
+
+    expect(updated.settings).toEqual({
+      ...createDefaultSettings(),
+      masterVolume: 0.4,
+      musicVolume: 0.9
+    });
+    expect(save.settings).toEqual(createDefaultSettings());
   });
 });
 

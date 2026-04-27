@@ -19,6 +19,9 @@ export type SaveStats = {
 export type SettingsData = {
   screenShake: boolean;
   damageNumbers: boolean;
+  masterVolume: number;
+  sfxVolume: number;
+  musicVolume: number;
 };
 
 export type SaveData = {
@@ -60,7 +63,10 @@ export function createDefaultSaveData(): SaveData {
 export function createDefaultSettings(): SettingsData {
   return {
     screenShake: true,
-    damageNumbers: true
+    damageNumbers: true,
+    masterVolume: 0.8,
+    sfxVolume: 0.75,
+    musicVolume: 0.35
   };
 }
 
@@ -95,8 +101,19 @@ export function normalizeSettings(value: unknown): SettingsData {
 
   return {
     screenShake: typeof value.screenShake === "boolean" ? value.screenShake : defaults.screenShake,
-    damageNumbers: typeof value.damageNumbers === "boolean" ? value.damageNumbers : defaults.damageNumbers
+    damageNumbers: typeof value.damageNumbers === "boolean" ? value.damageNumbers : defaults.damageNumbers,
+    masterVolume: normalizeVolume(value.masterVolume, defaults.masterVolume),
+    sfxVolume: normalizeVolume(value.sfxVolume, defaults.sfxVolume),
+    musicVolume: normalizeVolume(value.musicVolume, defaults.musicVolume)
   };
+}
+
+export function normalizeVolume(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(1, Math.max(0, value));
 }
 
 export function updateSettings(save: SaveData, patch: Partial<SettingsData>): SaveData {
