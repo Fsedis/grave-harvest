@@ -20,6 +20,8 @@
 - Видимый UI переведён на русский.
 - Crow Swarm преследует цель и ретаргетится, если цель умерла.
 - Особые weapon-upgrades работают как боевые эффекты: второй удар колокола, ожог свечи и кровотечение ворон.
+- 10-минутная spawn curve, enemy/projectile/pickup caps и pickup merging.
+- Retry loop явно сбрасывает боевые сущности, overlays и boss state.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
 - Базовые run-upgrades и weapon-specific upgrades.
 - Basic rarity weighting для карт: common, uncommon, rare.
@@ -84,13 +86,13 @@ Definition of Done:
 
 - [x] Добавить финального босса на 10:00 и победу после его убийства.
 - [x] Добавить victory screen.
-- [ ] Настроить 10-минутную budget curve.
+- [x] Настроить 10-минутную budget curve.
 - [x] Добавить scripted spawn элит на 5:00 и 10:00.
 - [x] Добавить boss HP bar.
 - [x] Синхронизировать AoE-визуал Holy Candle и Grave Bell с реальным damage radius.
-- [ ] Добавить hard caps для врагов, снарядов и pickups.
-- [ ] Добавить pickup merging при переполнении лимита.
-- [ ] Проверить повторный запуск нескольких забегов подряд.
+- [x] Добавить hard caps для врагов, снарядов и pickups.
+- [x] Добавить pickup merging при переполнении лимита.
+- [x] Проверить повторный запуск нескольких забегов подряд на уровне state reset.
 
 Definition of Done:
 - Забег можно пройти от 0:00 до 10:00 без перезагрузки страницы.
@@ -160,14 +162,14 @@ Definition of Done:
 
 ## Ближайший фокус
 
-Следующий рабочий срез: Balance And Retry Loop.
+Следующий рабочий срез: Bones And Meta Progression.
 
 Порядок задач:
-1. Настроить 10-минутную budget curve.
-2. Проверить death/victory/retry loop на нескольких забегах.
-3. Проверить баланс финального Bone Knight Captain.
-4. Добавить pickup merging при переполнении лимита.
-5. Проверить повторный запуск нескольких забегов подряд.
+1. Добавить bones drops и retention.
+2. Добавить localStorage save `grave_harvest_save_v1`.
+3. Реализовать экран постоянных улучшений.
+4. Подключить 5 meta-upgrades к стартовому состоянию забега.
+5. Добавить reset progress и базовую статистику.
 
 ## После MVP
 

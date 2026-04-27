@@ -7,14 +7,20 @@ const BUDGET_CURVE = [
   { time: 60, budget: 4.2 },
   { time: 90, budget: 5.5 },
   { time: 120, budget: 7 },
-  { time: 180, budget: 8.5 },
-  { time: 240, budget: 10 },
-  { time: 300, budget: 11 },
-  { time: 360, budget: 12.5 },
-  { time: 420, budget: 14 },
-  { time: 480, budget: 16 },
-  { time: 540, budget: 18 }
+  { time: 180, budget: 8.8 },
+  { time: 240, budget: 10.5 },
+  { time: 300, budget: 12 },
+  { time: 360, budget: 13.5 },
+  { time: 420, budget: 15 },
+  { time: 480, budget: 17 },
+  { time: 540, budget: 19 },
+  { time: 600, budget: 20 }
 ] as const;
+
+export const ENEMY_SPAWN_CAPS = {
+  soft: 180,
+  hard: 260
+} as const;
 
 export type ScriptedEnemySpawn = {
   id: string;
@@ -97,6 +103,21 @@ export function pickEnemyForBudget(
   return candidates[index];
 }
 
+export function getSpawnPressureMultiplier(
+  activeEnemies: number,
+  caps = ENEMY_SPAWN_CAPS
+): number {
+  if (activeEnemies >= caps.hard) {
+    return 0;
+  }
+
+  if (activeEnemies > caps.soft) {
+    return 0.5;
+  }
+
+  return 1;
+}
+
 export type EarlyGamePacingEstimate = {
   seconds: number;
   generatedBudget: number;
@@ -106,13 +127,63 @@ export type EarlyGamePacingEstimate = {
 
 export function estimateEarlyGamePacing(seconds: number): EarlyGamePacingEstimate {
   const safeSeconds = Math.max(0, Math.floor(seconds));
+  const generatedBudget = estimateGeneratedBudget(safeSeconds);
+
+  const estimatedCollectableXp = Math.floor(generatedBudget * 0.14);
+
+  return {
+    seconds: safeSeconds,
+    generatedBudget: roundBudget(generatedBudget),
+    estimatedCollectableXp,
+    levelUps: estimateLevelUps(estimatedCollectableXp)
+  };
+}
+
+export type NightPressureTier = "early" | "rising" | "dense" | "panic" | "final";
+
+export type NightPacingEstimate = {
+  seconds: number;
+  generatedBudget: number;
+  estimatedCollectableXp: number;
+  estimatedKills: {
+    min: number;
+    max: number;
+  };
+  levelUps: number;
+  pressureTier: NightPressureTier;
+};
+
+export function estimateNightPacing(seconds: number): NightPacingEstimate {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const generatedBudget = estimateGeneratedBudget(safeSeconds);
+  const estimatedCollectableXp = Math.floor(generatedBudget * 0.28);
+  const minKills = roundToNearest(generatedBudget / 8.8, 50);
+  const maxKills = Math.max(minKills, roundToNearest(generatedBudget / 5.9, 50));
+
+  return {
+    seconds: safeSeconds,
+    generatedBudget: roundBudget(generatedBudget),
+    estimatedCollectableXp,
+    estimatedKills: {
+      min: minKills,
+      max: maxKills
+    },
+    levelUps: estimateLevelUps(estimatedCollectableXp),
+    pressureTier: getNightPressureTier(safeSeconds)
+  };
+}
+
+function estimateGeneratedBudget(seconds: number): number {
   let generatedBudget = 0;
 
-  for (let elapsed = 0; elapsed < safeSeconds; elapsed += 1) {
+  for (let elapsed = 0; elapsed < seconds; elapsed += 1) {
     generatedBudget += getSpawnBudgetPerSecond(elapsed);
   }
 
-  const estimatedCollectableXp = Math.floor(generatedBudget * 0.14);
+  return generatedBudget;
+}
+
+function estimateLevelUps(estimatedCollectableXp: number): number {
   let remainingXp = estimatedCollectableXp;
   let nextLevel = 1;
   let levelUps = 0;
@@ -123,12 +194,31 @@ export function estimateEarlyGamePacing(seconds: number): EarlyGamePacingEstimat
     levelUps += 1;
   }
 
-  return {
-    seconds: safeSeconds,
-    generatedBudget: roundBudget(generatedBudget),
-    estimatedCollectableXp,
-    levelUps
-  };
+  return levelUps;
+}
+
+function getNightPressureTier(seconds: number): NightPressureTier {
+  if (seconds >= 600) {
+    return "final";
+  }
+
+  if (seconds >= 480) {
+    return "panic";
+  }
+
+  if (seconds >= 300) {
+    return "dense";
+  }
+
+  if (seconds >= 120) {
+    return "rising";
+  }
+
+  return "early";
+}
+
+function roundToNearest(value: number, step: number): number {
+  return Math.round(value / step) * step;
 }
 
 function roundBudget(value: number): number {

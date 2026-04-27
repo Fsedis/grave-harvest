@@ -8,10 +8,13 @@ import {
   shouldShowDamageNumber,
   type RingVisual
 } from "../domain/effects";
+import { selectPickupMergeTarget, type PickupMergeCandidate } from "../domain/pickups";
 import { calculateRetainedBones, xpRequired } from "../domain/progression";
 import {
+  ENEMY_SPAWN_CAPS,
   getScriptedEnemySpawns,
   getSpawnBudgetPerSecond,
+  getSpawnPressureMultiplier,
   pickEnemyForBudget,
   type ScriptedEnemySpawn
 } from "../domain/spawnDirector";
@@ -36,8 +39,7 @@ import {
 
 const MAP_SIZE = 2200;
 const PLAYER_RADIUS = 16;
-const SOFT_ENEMY_CAP = 180;
-const HARD_ENEMY_CAP = 260;
+const HARD_ENEMY_CAP = ENEMY_SPAWN_CAPS.hard;
 const HARD_PROJECTILE_CAP = 300;
 const HARD_PICKUP_CAP = 400;
 const PLAYER_INVULNERABILITY_SECONDS = 0.35;
@@ -451,6 +453,7 @@ export class RunScene extends Phaser.Scene {
   private startRun(): void {
     this.clearOverlay();
     this.clearEntities();
+    this.currentUpgradeOptions = [];
     this.nextEnemyRuntimeId = 1;
     const upgradeState = createInitialUpgradeState();
 
@@ -472,6 +475,7 @@ export class RunScene extends Phaser.Scene {
     };
 
     this.activeFinalBoss = null;
+    this.setLowHpWarningVisible(false);
     this.player.enableBody(true, MAP_SIZE / 2, MAP_SIZE / 2, true, true);
     this.player.clearTint();
     this.player.setVelocity(0, 0);
@@ -528,12 +532,12 @@ export class RunScene extends Phaser.Scene {
     scriptedSpawns.forEach((spawn) => this.spawnScriptedEnemy(spawn));
 
     const activeEnemies = this.enemies.countActive(true);
+    const pressureMultiplier = getSpawnPressureMultiplier(activeEnemies);
 
-    if (activeEnemies >= HARD_ENEMY_CAP) {
+    if (pressureMultiplier <= 0) {
       return;
     }
 
-    const pressureMultiplier = activeEnemies > SOFT_ENEMY_CAP ? 0.5 : 1;
     this.run.spawnBudget += getSpawnBudgetPerSecond(this.run.timeElapsed) * pressureMultiplier * dt;
 
     let spawnedThisFrame = 0;
@@ -870,6 +874,10 @@ export class RunScene extends Phaser.Scene {
   }
 
   private fireKnifeAt(target: EnemySprite, stats: DerivedWeaponStats, index: number, total: number): void {
+    if (this.projectiles.countActive(true) >= HARD_PROJECTILE_CAP) {
+      return;
+    }
+
     const projectile = this.projectiles.get(this.player.x, this.player.y, "knife") as ProjectileSprite | null;
 
     if (!projectile) {
@@ -987,6 +995,10 @@ export class RunScene extends Phaser.Scene {
   }
 
   private fireCrowAt(target: EnemySprite, stats: DerivedWeaponStats, index: number, total: number): void {
+    if (this.projectiles.countActive(true) >= HARD_PROJECTILE_CAP) {
+      return;
+    }
+
     const projectile = this.projectiles.get(this.player.x, this.player.y, "crow") as ProjectileSprite | null;
 
     if (!projectile) {
@@ -1228,7 +1240,9 @@ export class RunScene extends Phaser.Scene {
 
   private spawnPickup(type: PickupSprite["pickupType"], x: number, y: number, value: number): void {
     if (this.pickups.countActive(true) >= HARD_PICKUP_CAP) {
-      return;
+      if (this.mergePickupValue(type, x, y, value)) {
+        return;
+      }
     }
 
     const pickup = this.pickups.get(x, y, type === "xp" ? "xp" : "bones") as PickupSprite | null;
@@ -1252,6 +1266,41 @@ export class RunScene extends Phaser.Scene {
       duration: 180,
       ease: "Back.easeOut"
     });
+  }
+
+  private mergePickupValue(type: PickupSprite["pickupType"], x: number, y: number, value: number): boolean {
+    const activePickups = this.pickups
+      .getChildren()
+      .map((child, index) => ({ pickup: child as PickupSprite, id: String(index) }))
+      .filter(({ pickup }) => pickup.active);
+    const candidates: PickupMergeCandidate[] = activePickups.map(({ pickup, id }) => ({
+      id,
+      type: pickup.pickupType,
+      x: pickup.x,
+      y: pickup.y,
+      value: pickup.value
+    }));
+    const target = selectPickupMergeTarget({
+      type,
+      x,
+      y,
+      candidates
+    });
+
+    if (!target) {
+      return false;
+    }
+
+    const targetPickup = activePickups.find(({ id }) => id === target.id)?.pickup;
+
+    if (!targetPickup) {
+      return false;
+    }
+
+    targetPickup.value += value;
+    this.createBurst(targetPickup.x, targetPickup.y, type === "xp" ? 0x69d7ff : 0xe6d1a3, 3, 14, 120);
+
+    return true;
   }
 
   private updatePickups(dt: number): void {
@@ -1470,6 +1519,9 @@ export class RunScene extends Phaser.Scene {
     this.player.setTint(0x8a1d1d);
     this.physics.pause();
     this.clearDamageNumbers();
+    this.setLowHpWarningVisible(false);
+    this.activeFinalBoss = null;
+    this.layoutHud();
     this.showGameOverOverlay();
   }
 
@@ -1478,6 +1530,9 @@ export class RunScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
     this.physics.pause();
     this.clearDamageNumbers();
+    this.setLowHpWarningVisible(false);
+    this.activeFinalBoss = null;
+    this.layoutHud();
     this.showVictoryOverlay();
   }
 

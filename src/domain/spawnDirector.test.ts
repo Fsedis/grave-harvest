@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   estimateEarlyGamePacing,
+  estimateNightPacing,
   getAllowedEnemies,
   getScriptedEnemySpawns,
   getSpawnBudgetPerSecond,
+  getSpawnPressureMultiplier,
   pickEnemyForBudget
 } from "./spawnDirector";
 
@@ -14,8 +16,28 @@ describe("getSpawnBudgetPerSecond", () => {
     expect(getSpawnBudgetPerSecond(60)).toBe(4.2);
     expect(getSpawnBudgetPerSecond(90)).toBe(5.5);
     expect(getSpawnBudgetPerSecond(120)).toBe(7);
-    expect(getSpawnBudgetPerSecond(540)).toBe(18);
-    expect(getSpawnBudgetPerSecond(999)).toBe(18);
+    expect(getSpawnBudgetPerSecond(540)).toBe(19);
+    expect(getSpawnBudgetPerSecond(999)).toBe(20);
+  });
+
+  it("defines the full-night pressure checkpoints up to the captain", () => {
+    expect(getSpawnBudgetPerSecond(0)).toBe(1.8);
+    expect(getSpawnBudgetPerSecond(60)).toBe(4.2);
+    expect(getSpawnBudgetPerSecond(120)).toBe(7);
+    expect(getSpawnBudgetPerSecond(300)).toBe(12);
+    expect(getSpawnBudgetPerSecond(480)).toBe(17);
+    expect(getSpawnBudgetPerSecond(540)).toBe(19);
+    expect(getSpawnBudgetPerSecond(600)).toBe(20);
+  });
+});
+
+describe("getSpawnPressureMultiplier", () => {
+  it("keeps pressure normal below soft cap, halves it above soft cap, and stops at hard cap", () => {
+    expect(getSpawnPressureMultiplier(179)).toBe(1);
+    expect(getSpawnPressureMultiplier(180)).toBe(1);
+    expect(getSpawnPressureMultiplier(181)).toBe(0.5);
+    expect(getSpawnPressureMultiplier(260)).toBe(0);
+    expect(getSpawnPressureMultiplier(300)).toBe(0);
   });
 });
 
@@ -58,6 +80,18 @@ describe("estimateEarlyGamePacing", () => {
 
   it("targets at least two level-ups by two minutes", () => {
     expect(estimateEarlyGamePacing(120).levelUps).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("estimateNightPacing", () => {
+  it("estimates a full 10-minute night as final pressure with MVP-scale activity", () => {
+    const estimate = estimateNightPacing(600);
+
+    expect(estimate.generatedBudget).toBeGreaterThan(7000);
+    expect(estimate.estimatedKills).toEqual({ min: 800, max: 1200 });
+    expect(estimate.estimatedCollectableXp).toBeGreaterThan(1800);
+    expect(estimate.levelUps).toBeGreaterThanOrEqual(15);
+    expect(estimate.pressureTier).toBe("final");
   });
 });
 
