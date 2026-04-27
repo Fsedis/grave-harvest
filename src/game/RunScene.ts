@@ -1,6 +1,13 @@
 import Phaser from "phaser";
 import { getEnemyDefinition, type EnemyDefinition } from "../data/enemies";
-import { getDamageRadiusRingVisual, getDecorativeRingVisual, type RingVisual } from "../domain/effects";
+import {
+  getDamageNumberVisual,
+  getDamageRadiusRingVisual,
+  getDecorativeRingVisual,
+  isLowHp,
+  shouldShowDamageNumber,
+  type RingVisual
+} from "../domain/effects";
 import { calculateRetainedBones, xpRequired } from "../domain/progression";
 import {
   getScriptedEnemySpawns,
@@ -52,6 +59,14 @@ type ProjectileSprite = Phaser.Physics.Arcade.Image & {
   range: number;
   traveled: number;
   pierce: number;
+  isCrit: boolean;
+  damageTextColor: number;
+};
+
+type DamageFeedbackOptions = {
+  important?: boolean;
+  color?: number;
+  showNumber?: boolean;
 };
 
 type PickupSprite = Phaser.Physics.Arcade.Image & {
@@ -100,6 +115,8 @@ export class RunScene extends Phaser.Scene {
   private bossHpBack!: Phaser.GameObjects.Rectangle;
   private bossHpFill!: Phaser.GameObjects.Rectangle;
   private bossHpText!: Phaser.GameObjects.Text;
+  private lowHpEdges: Phaser.GameObjects.Rectangle[] = [];
+  private damageNumberTexts: Phaser.GameObjects.Text[] = [];
   private activeFinalBoss: EnemySprite | null = null;
 
   constructor() {
@@ -126,10 +143,25 @@ export class RunScene extends Phaser.Scene {
     this.run.timeElapsed += dt;
     this.updatePlayerMovement();
     this.updateSpawnDirector(dt);
+    if (this.status !== "playing") {
+      return;
+    }
     this.updateEnemies(dt);
+    if (this.status !== "playing") {
+      return;
+    }
     this.updateWeapons(dt);
+    if (this.status !== "playing") {
+      return;
+    }
     this.updateProjectiles(dt);
+    if (this.status !== "playing") {
+      return;
+    }
     this.updatePickups(dt);
+    if (this.status !== "playing") {
+      return;
+    }
     this.layoutHud();
   }
 
@@ -346,6 +378,12 @@ export class RunScene extends Phaser.Scene {
       color: "#f2dfb0",
       fontStyle: "700"
     });
+    this.lowHpEdges = [
+      this.add.rectangle(0, 0, 0, 0, 0x8b1515, 0).setOrigin(0, 0),
+      this.add.rectangle(0, 0, 0, 0, 0x8b1515, 0).setOrigin(0, 0),
+      this.add.rectangle(0, 0, 0, 0, 0x8b1515, 0).setOrigin(0, 0),
+      this.add.rectangle(0, 0, 0, 0, 0x8b1515, 0).setOrigin(0, 0)
+    ];
     this.weaponIcons = [];
     this.weaponTexts = [];
 
@@ -369,10 +407,12 @@ export class RunScene extends Phaser.Scene {
       ...this.weaponTexts,
       this.bossHpBack,
       this.bossHpFill,
-      this.bossHpText
+      this.bossHpText,
+      ...this.lowHpEdges
     ];
 
     this.hudObjects.forEach((object) => object.setScrollFactor(0).setDepth(1000));
+    this.lowHpEdges.forEach((edge) => edge.setDepth(999));
     this.layoutHud();
     this.setHudVisible(false);
   }
@@ -413,6 +453,7 @@ export class RunScene extends Phaser.Scene {
   private pauseRun(): void {
     this.status = "paused";
     this.physics.pause();
+    this.setLowHpWarningVisible(false);
     this.showPauseOverlay();
   }
 
@@ -733,6 +774,8 @@ export class RunScene extends Phaser.Scene {
     projectile.range = stats.range;
     projectile.traveled = 0;
     projectile.pierce = 0;
+    projectile.isCrit = crit;
+    projectile.damageTextColor = crit ? 0xf2d36b : 0xf3ead0;
     projectile.setTexture("knife");
     projectile.setActive(true);
     projectile.setVisible(true);
@@ -755,10 +798,16 @@ export class RunScene extends Phaser.Scene {
       const distanceSq = Phaser.Math.Distance.Squared(this.player.x, this.player.y, enemy.x, enemy.y);
 
       if (distanceSq <= stats.radius * stats.radius) {
-        this.damageEnemy(enemy, Math.max(1, Math.round(stats.damage)));
+        this.damageEnemy(enemy, Math.max(1, Math.round(stats.damage)), {
+          important: enemy.isElite,
+          color: 0xf7d779
+        });
 
         if (stats.burn && enemy.active) {
-          this.damageEnemy(enemy, Math.max(1, Math.round(stats.damage * 0.35)));
+          this.damageEnemy(enemy, Math.max(1, Math.round(stats.damage * 0.35)), {
+            color: 0xf7944d,
+            showNumber: false
+          });
           this.createBurst(enemy.x, enemy.y, 0xf7944d, 2, 10, 110);
         }
       }
@@ -793,7 +842,10 @@ export class RunScene extends Phaser.Scene {
       const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
 
       if (distance <= radius) {
-        this.damageEnemy(enemy, damage);
+        this.damageEnemy(enemy, damage, {
+          important: enemy.isElite,
+          color: 0xcdbb8d
+        });
 
         if (enemy.active && distance > 0) {
           const knockback = 42 * (1 - enemy.def.knockbackResistance);
@@ -831,6 +883,8 @@ export class RunScene extends Phaser.Scene {
     projectile.range = stats.range;
     projectile.traveled = 0;
     projectile.pierce = stats.bleed ? 1 : 0;
+    projectile.isCrit = false;
+    projectile.damageTextColor = 0xf3ead0;
     projectile.setTexture("crow");
     projectile.setActive(true);
     projectile.setVisible(true);
@@ -867,7 +921,10 @@ export class RunScene extends Phaser.Scene {
         const distanceSq = Phaser.Math.Distance.Squared(projectile.x, projectile.y, enemy.x, enemy.y);
 
         if (distanceSq <= hitDistance * hitDistance) {
-          this.damageEnemy(enemy, projectile.damage);
+          this.damageEnemy(enemy, projectile.damage, {
+            important: projectile.isCrit || enemy.isElite,
+            color: projectile.damageTextColor
+          });
           if (projectile.pierce > 0) {
             projectile.pierce -= 1;
             projectile.damage = Math.max(1, Math.round(projectile.damage * 0.5));
@@ -881,8 +938,12 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  private damageEnemy(enemy: EnemySprite, amount: number): void {
+  private damageEnemy(enemy: EnemySprite, amount: number, feedback: DamageFeedbackOptions = {}): void {
     enemy.hp -= amount;
+    const important = Boolean(feedback.important || enemy.isElite);
+    if (feedback.showNumber !== false) {
+      this.maybeShowDamageNumber(enemy, amount, important, feedback.color);
+    }
     enemy.setTintFill(0xfff4d8);
     if (Math.random() < 0.32) {
       this.createBurst(enemy.x, enemy.y, 0xffe7b8, 2, 12, 90);
@@ -896,6 +957,49 @@ export class RunScene extends Phaser.Scene {
     if (enemy.hp <= 0) {
       this.killEnemy(enemy);
     }
+  }
+
+  private maybeShowDamageNumber(enemy: EnemySprite, amount: number, important: boolean, color?: number): void {
+    const shouldShow = shouldShowDamageNumber({
+      activeCount: this.damageNumberTexts.length,
+      activeEnemies: this.enemies.countActive(true),
+      important,
+      roll: Math.random()
+    });
+
+    if (!shouldShow) {
+      return;
+    }
+
+    this.showDamageNumber(enemy.x, enemy.y - enemy.def.radius - 8, amount, important, color);
+  }
+
+  private showDamageNumber(x: number, y: number, amount: number, important: boolean, color?: number): void {
+    const visual = getDamageNumberVisual({ amount, important });
+    const label = this.add
+      .text(x + Phaser.Math.Between(-6, 6), y, visual.text, {
+        fontFamily: "Inter, Arial, sans-serif",
+        fontSize: `${visual.fontSize}px`,
+        fontStyle: "700",
+        color: color === undefined ? visual.color : colorToCss(color),
+        stroke: "#17110d",
+        strokeThickness: important ? 3 : 2
+      })
+      .setOrigin(0.5)
+      .setDepth(121);
+
+    this.damageNumberTexts.push(label);
+    this.tweens.add({
+      targets: label,
+      y: y - visual.riseDistance,
+      alpha: 0,
+      duration: visual.durationMs,
+      ease: "Quad.easeOut",
+      onComplete: () => {
+        this.damageNumberTexts = this.damageNumberTexts.filter((text) => text !== label);
+        label.destroy();
+      }
+    });
   }
 
   private killEnemy(enemy: EnemySprite): void {
@@ -1115,6 +1219,23 @@ export class RunScene extends Phaser.Scene {
     });
   }
 
+  private createLevelUpFlash(): void {
+    this.createRingBurst(this.player.x, this.player.y, 0x8feaff, 120);
+    const { width, height } = this.scale;
+    const flash = this.add
+      .rectangle(width / 2, height / 2, width, height, 0xf3dea6, 0.18)
+      .setScrollFactor(0)
+      .setDepth(1999);
+
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 260,
+      ease: "Quad.easeOut",
+      onComplete: () => flash.destroy()
+    });
+  }
+
   private checkLevelUp(): void {
     if (this.run.xp < this.run.xpToNext || this.status !== "playing") {
       return;
@@ -1123,6 +1244,7 @@ export class RunScene extends Phaser.Scene {
     this.run.xp -= this.run.xpToNext;
     this.run.level += 1;
     this.run.xpToNext = xpRequired(this.run.level);
+    this.createLevelUpFlash();
     this.status = "level_up";
     this.player.setVelocity(0, 0);
     this.physics.pause();
@@ -1160,6 +1282,7 @@ export class RunScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
     this.player.setTint(0x8a1d1d);
     this.physics.pause();
+    this.clearDamageNumbers();
     this.showGameOverOverlay();
   }
 
@@ -1167,6 +1290,7 @@ export class RunScene extends Phaser.Scene {
     this.status = "victory";
     this.player.setVelocity(0, 0);
     this.physics.pause();
+    this.clearDamageNumbers();
     this.showVictoryOverlay();
   }
 
@@ -1174,6 +1298,7 @@ export class RunScene extends Phaser.Scene {
     this.enemies.clear(true, true);
     this.projectiles.clear(true, true);
     this.pickups.clear(true, true);
+    this.clearDamageNumbers();
     this.activeFinalBoss = null;
   }
 
@@ -1181,6 +1306,7 @@ export class RunScene extends Phaser.Scene {
     this.status = "menu";
     this.physics.pause();
     this.setHudVisible(false);
+    this.clearDamageNumbers();
     this.clearOverlay();
 
     const { width, height } = this.scale;
@@ -1388,8 +1514,49 @@ export class RunScene extends Phaser.Scene {
     this.overlayObjects = [];
   }
 
+  private clearDamageNumbers(): void {
+    this.damageNumberTexts.forEach((label) => {
+      this.tweens.killTweensOf(label);
+      label.destroy();
+    });
+    this.damageNumberTexts = [];
+  }
+
   private setHudVisible(visible: boolean): void {
     this.hudObjects.forEach((object) => object.setVisible(visible));
+    if (!visible) {
+      this.setLowHpWarningVisible(false);
+    }
+  }
+
+  private setLowHpWarningVisible(visible: boolean, alpha = 0): void {
+    this.lowHpEdges.forEach((edge) => edge.setVisible(visible).setAlpha(alpha));
+  }
+
+  private layoutLowHpWarning(width: number, height: number, compact: boolean): void {
+    const visible = this.status === "playing" && isLowHp(this.run.hp, this.run.upgrades.maxHp);
+
+    if (!visible) {
+      this.setLowHpWarningVisible(false);
+      return;
+    }
+
+    const thickness = compact ? 24 : 32;
+    const pulse = 0.2 + Math.sin(this.run.timeElapsed * 8.5) * 0.07;
+    const [top, bottom, left, right] = this.lowHpEdges;
+    top.setPosition(0, 0);
+    top.width = width;
+    top.height = thickness;
+    bottom.setPosition(0, height - thickness);
+    bottom.width = width;
+    bottom.height = thickness;
+    left.setPosition(0, 0);
+    left.width = thickness;
+    left.height = height;
+    right.setPosition(width - thickness, 0);
+    right.width = thickness;
+    right.height = height;
+    this.setLowHpWarningVisible(true, pulse);
   }
 
   private layoutHud(): void {
@@ -1485,6 +1652,8 @@ export class RunScene extends Phaser.Scene {
         .setPosition(width / 2, bossY + 18)
         .setOrigin(0.5, 0);
     }
+
+    this.layoutLowHpWarning(width, height, compact);
   }
 }
 

@@ -16,6 +16,7 @@
 - Победа только после убийства финального Bone Knight Captain.
 - Victory screen и boss HP bar.
 - Damage-radius rings для Holy Candle и Grave Bell совпадают с реальным радиусом урона.
+- Damage numbers с лимитом, low HP warning и level-up flash.
 - XP pickups, сбор опыта, level-up экран с 3 картами.
 - Базовые run-upgrades и weapon-specific upgrades.
 - Basic rarity weighting для карт: common, uncommon, rare.
@@ -117,10 +118,12 @@ Definition of Done:
 
 Цель: превратить прототип в приятную аркадную мясорубку.
 
+- [x] Добавить damage numbers с лимитом, без настройки on/off.
+- [x] Добавить low HP warning.
+- [x] Добавить level-up flash.
 - [ ] Добавить screen shake с настройкой on/off.
 - [ ] Добавить damage numbers с настройкой on/off.
-- [ ] Добавить low HP warning.
-- [ ] Добавить level-up flash/sting.
+- [ ] Добавить level-up sting.
 - [ ] Добавить SFX для shot, hit, death, pickup, level-up, player hit.
 - [ ] Добавить простую ambient/music loop.
 - [ ] Улучшить pause screen.
@@ -152,7 +155,7 @@ Definition of Done:
 
 ## Ближайший фокус
 
-Следующий рабочий срез: Full Night Balance Pass.
+Следующий рабочий срез: Balance And Retry Loop.
 
 Порядок задач:
 1. Настроить 10-минутную budget curve.
