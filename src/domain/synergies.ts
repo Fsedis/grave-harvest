@@ -60,6 +60,16 @@ export function getActiveSynergies(state: UpgradeState): SynergyDefinition[] {
   return SYNERGY_DEFINITIONS.filter((synergy) => activeIds.has(synergy.id));
 }
 
+export function getActiveSynergyNames(state: UpgradeState): string[] {
+  return getActiveSynergies(state).map((synergy) => synergy.name);
+}
+
+export function formatActiveSynergySummary(state: UpgradeState): string {
+  const names = getActiveSynergyNames(state);
+
+  return names.length > 0 ? names.join(", ") : "нет";
+}
+
 function isKnownSynergy(synergyId: string): boolean {
   return SYNERGY_DEFINITIONS.some((synergy) => synergy.id === synergyId);
 }

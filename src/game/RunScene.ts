@@ -70,7 +70,19 @@ import {
   type UpgradeDefinition,
   type UpgradeState
 } from "../domain/upgrades";
-import { hasActiveSynergy } from "../domain/synergies";
+import {
+  formatActiveSynergySummary,
+  getActiveSynergyNames,
+  hasActiveSynergy
+} from "../domain/synergies";
+import {
+  getBellBurnTickDamage,
+  getBleedingTargetKnifeDamage,
+  getCrowBleedTickDamage,
+  getCrowFlameBurstSpec,
+  getKnifeBurnTickDamage,
+  getKnifePierceBonus
+} from "../domain/synergyEffects";
 import { AudioManager } from "./audio/AudioManager";
 
 const MAP_SIZE = 2200;
@@ -130,7 +142,11 @@ type ProjectileSprite = Phaser.Physics.Arcade.Image & {
   pierce: number;
   isCrit: boolean;
   damageTextColor: number;
+  appliesBurn: boolean;
   appliesBleed: boolean;
+  bonusAgainstBleeding: boolean;
+  createsFlameBurst: boolean;
+  hitEnemyIds: number[];
   kind: "knife" | "crow";
   targetEnemyId: number | null;
   homingSpeed: number;
@@ -200,6 +216,8 @@ export class RunScene extends Phaser.Scene {
   private weaponPanel!: Phaser.GameObjects.Rectangle;
   private weaponIcons: Phaser.GameObjects.Image[] = [];
   private weaponTexts: Phaser.GameObjects.Text[] = [];
+  private synergyPanel!: Phaser.GameObjects.Rectangle;
+  private synergyText!: Phaser.GameObjects.Text;
   private bossHpBack!: Phaser.GameObjects.Rectangle;
   private bossHpFill!: Phaser.GameObjects.Rectangle;
   private bossHpText!: Phaser.GameObjects.Text;
@@ -604,6 +622,14 @@ export class RunScene extends Phaser.Scene {
     this.xpFill = this.add.rectangle(24, 0, 100, 12, 0x55bde0, 1).setOrigin(0, 0);
     this.weaponPanel = this.add.rectangle(24, 0, 276, 40, 0x111612, 0.88).setOrigin(0, 0);
     this.weaponPanel.setStrokeStyle(1, 0x47513f, 0.9);
+    this.synergyPanel = this.add.rectangle(24, 0, 320, 42, 0x17130f, 0.9).setOrigin(0, 0);
+    this.synergyPanel.setStrokeStyle(1, 0xd6a84f, 0.9);
+    this.synergyText = this.add.text(0, 0, "", {
+      fontFamily: "Inter, Arial, sans-serif",
+      fontSize: "13px",
+      color: "#f3d58b",
+      lineSpacing: 2
+    });
     this.bossHpBack = this.add.rectangle(0, 0, 440, 14, 0x261615, 0.95).setOrigin(0, 0);
     this.bossHpBack.setStrokeStyle(1, 0x6b5a3c, 0.95);
     this.bossHpFill = this.add.rectangle(0, 0, 440, 14, 0xb44a3c, 1).setOrigin(0, 0);
@@ -648,6 +674,8 @@ export class RunScene extends Phaser.Scene {
       this.weaponPanel,
       ...this.weaponIcons,
       ...this.weaponTexts,
+      this.synergyPanel,
+      this.synergyText,
       this.bossHpBack,
       this.bossHpFill,
       this.bossHpText,
@@ -1091,10 +1119,11 @@ export class RunScene extends Phaser.Scene {
     }
 
     const stillPending: PendingBellPulse[] = [];
+    const synergyFlags = this.getActiveSynergyFlags();
 
     for (const pendingPulse of this.pendingBellPulses) {
       if (pendingPulse.fireAt <= this.run.timeElapsed) {
-        this.applyBellPulse(pendingPulse.pulse);
+        this.applyBellPulse(pendingPulse.pulse, synergyFlags);
         if (this.status !== "playing") {
           break;
         }
@@ -1162,7 +1191,7 @@ export class RunScene extends Phaser.Scene {
     this.createBurst(enemy.x, enemy.y, effectType === "burn" ? 0xf7944d : 0xc43a3a, 2, 10, 120);
   }
 
-  private fireBoneKnives(stats: DerivedWeaponStats, _synergyFlags: ActiveSynergyFlags): void {
+  private fireBoneKnives(stats: DerivedWeaponStats, synergyFlags: ActiveSynergyFlags): void {
     for (let index = 0; index < stats.projectileCount; index += 1) {
       const target = this.findNearestEnemy(stats.range);
 
@@ -1170,7 +1199,7 @@ export class RunScene extends Phaser.Scene {
         return;
       }
 
-      this.fireKnifeAt(target, stats, index, stats.projectileCount);
+      this.fireKnifeAt(target, stats, index, stats.projectileCount, synergyFlags);
     }
   }
 
@@ -1220,7 +1249,13 @@ export class RunScene extends Phaser.Scene {
     return candidates[Phaser.Math.Between(0, candidates.length - 1)];
   }
 
-  private fireKnifeAt(target: EnemySprite, stats: DerivedWeaponStats, index: number, total: number): void {
+  private fireKnifeAt(
+    target: EnemySprite,
+    stats: DerivedWeaponStats,
+    index: number,
+    total: number,
+    synergyFlags: ActiveSynergyFlags
+  ): void {
     if (this.projectiles.countActive(true) >= HARD_PROJECTILE_CAP) {
       return;
     }
@@ -1241,10 +1276,14 @@ export class RunScene extends Phaser.Scene {
     projectile.damage = Math.round(stats.damage * critMultiplier);
     projectile.range = stats.range;
     projectile.traveled = 0;
-    projectile.pierce = 0;
+    projectile.pierce = (stats.pierce ?? 0) + (synergyFlags.knivesPierce ? getKnifePierceBonus() : 0);
     projectile.isCrit = crit;
     projectile.damageTextColor = crit ? 0xf2d36b : 0xf3ead0;
+    projectile.appliesBurn = synergyFlags.knivesApplyBurn;
     projectile.appliesBleed = false;
+    projectile.bonusAgainstBleeding = synergyFlags.knivesBleedBonus;
+    projectile.createsFlameBurst = false;
+    projectile.hitEnemyIds = [];
     projectile.kind = "knife";
     projectile.targetEnemyId = null;
     projectile.homingSpeed = 0;
@@ -1284,14 +1323,14 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  private ringGraveBell(stats: DerivedWeaponStats, _synergyFlags: ActiveSynergyFlags): void {
+  private ringGraveBell(stats: DerivedWeaponStats, synergyFlags: ActiveSynergyFlags): void {
     getBellPulseSpecs({
       damage: stats.damage,
       pulseCount: stats.pulseCount,
       radius: stats.radius
     }).forEach((pulse) => {
       if (pulse.delayMs === 0) {
-        this.applyBellPulse(pulse);
+        this.applyBellPulse(pulse, synergyFlags);
         return;
       }
 
@@ -1302,7 +1341,7 @@ export class RunScene extends Phaser.Scene {
     });
   }
 
-  private applyBellPulse(pulse: BellPulseSpec): void {
+  private applyBellPulse(pulse: BellPulseSpec, synergyFlags: ActiveSynergyFlags): void {
     this.createDamageRadiusRing(this.player.x, this.player.y, 0xcdbb8d, pulse.radius);
     this.shakeCamera(pulse.index === 0 ? 80 : 110, pulse.index === 0 ? 0.003 : 0.004);
     this.audio.playSfx("bell_pulse");
@@ -1322,6 +1361,10 @@ export class RunScene extends Phaser.Scene {
           color: 0xcdbb8d
         });
 
+        if (enemy.active && synergyFlags.bellCandleBurn) {
+          this.applyTimedDamageEffect(enemy, "burn", getBellBurnTickDamage(pulse.damage));
+        }
+
         if (enemy.active && distance > 0) {
           const knockback = (pulse.index === 0 ? 42 : 58) * (1 - enemy.def.knockbackResistance);
           enemy.x += ((enemy.x - this.player.x) / distance) * knockback;
@@ -1329,9 +1372,13 @@ export class RunScene extends Phaser.Scene {
         }
       }
     }
+
+    if (synergyFlags.bellBonusCrow) {
+      this.releaseBonusCrowFromBell(synergyFlags);
+    }
   }
 
-  private releaseCrowSwarm(stats: DerivedWeaponStats, _synergyFlags: ActiveSynergyFlags): void {
+  private releaseCrowSwarm(stats: DerivedWeaponStats, synergyFlags: ActiveSynergyFlags): void {
     for (let index = 0; index < stats.projectileCount; index += 1) {
       const target = this.findRandomEnemy(stats.range);
 
@@ -1339,11 +1386,33 @@ export class RunScene extends Phaser.Scene {
         return;
       }
 
-      this.fireCrowAt(target, stats, index, stats.projectileCount);
+      this.fireCrowAt(target, stats, index, stats.projectileCount, synergyFlags);
     }
   }
 
-  private fireCrowAt(target: EnemySprite, stats: DerivedWeaponStats, index: number, total: number): void {
+  private releaseBonusCrowFromBell(synergyFlags: ActiveSynergyFlags): void {
+    if (!this.run.upgrades.weapons.includes("crow_swarm")) {
+      return;
+    }
+
+    const stats = getDerivedWeaponStats(this.run.upgrades, "crow_swarm");
+    const target = this.findRandomEnemy(stats.range);
+
+    if (!target) {
+      return;
+    }
+
+    this.createBurst(this.player.x, this.player.y, 0x1f1b24, 4, 18, 140);
+    this.fireCrowAt(target, stats, 0, 1, synergyFlags);
+  }
+
+  private fireCrowAt(
+    target: EnemySprite,
+    stats: DerivedWeaponStats,
+    index: number,
+    total: number,
+    synergyFlags: ActiveSynergyFlags
+  ): void {
     if (this.projectiles.countActive(true) >= HARD_PROJECTILE_CAP) {
       return;
     }
@@ -1364,7 +1433,11 @@ export class RunScene extends Phaser.Scene {
     projectile.pierce = 0;
     projectile.isCrit = false;
     projectile.damageTextColor = 0xf3ead0;
-    projectile.appliesBleed = stats.bleed;
+    projectile.appliesBurn = false;
+    projectile.appliesBleed = stats.bleed || synergyFlags.knivesBleedBonus;
+    projectile.bonusAgainstBleeding = false;
+    projectile.createsFlameBurst = synergyFlags.crowsFlameBurst;
+    projectile.hitEnemyIds = [];
     projectile.kind = "crow";
     projectile.targetEnemyId = target.runtimeId;
     projectile.homingSpeed = 540;
@@ -1411,16 +1484,34 @@ export class RunScene extends Phaser.Scene {
           continue;
         }
 
+        if (projectile.hitEnemyIds.includes(enemy.runtimeId)) {
+          continue;
+        }
+
         const hitDistance = enemy.def.radius + 8;
         const distanceSq = Phaser.Math.Distance.Squared(projectile.x, projectile.y, enemy.x, enemy.y);
 
         if (distanceSq <= hitDistance * hitDistance) {
-          this.damageEnemy(enemy, projectile.damage, {
+          projectile.hitEnemyIds.push(enemy.runtimeId);
+          const hitX = enemy.x;
+          const hitY = enemy.y;
+          const hitDamage =
+            projectile.bonusAgainstBleeding && enemy.bleedEffect
+              ? getBleedingTargetKnifeDamage(projectile.damage)
+              : projectile.damage;
+
+          this.damageEnemy(enemy, hitDamage, {
             important: projectile.isCrit || enemy.isElite,
             color: projectile.damageTextColor
           });
+          if (enemy.active && projectile.appliesBurn) {
+            this.applyTimedDamageEffect(enemy, "burn", getKnifeBurnTickDamage(hitDamage));
+          }
           if (enemy.active && projectile.appliesBleed) {
-            this.applyTimedDamageEffect(enemy, "bleed", Math.max(1, Math.round(projectile.damage * 0.25)));
+            this.applyTimedDamageEffect(enemy, "bleed", getCrowBleedTickDamage(hitDamage));
+          }
+          if (projectile.createsFlameBurst) {
+            this.createCrowFlameBurst(hitX, hitY, hitDamage);
           }
           if (projectile.pierce > 0) {
             projectile.pierce -= 1;
@@ -1430,6 +1521,33 @@ export class RunScene extends Phaser.Scene {
             projectile.disableBody(true, true);
           }
           break;
+        }
+      }
+    }
+  }
+
+  private createCrowFlameBurst(x: number, y: number, hitDamage: number): void {
+    const burst = getCrowFlameBurstSpec(hitDamage);
+    this.createDamageRadiusRing(x, y, 0xf7944d, burst.radius);
+    this.createBurst(x, y, 0xf7944d, 6, 28, 180);
+
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as EnemySprite;
+
+      if (!enemy.active) {
+        continue;
+      }
+
+      const distanceSq = Phaser.Math.Distance.Squared(x, y, enemy.x, enemy.y);
+
+      if (distanceSq <= burst.radius * burst.radius) {
+        this.damageEnemy(enemy, burst.damage, {
+          important: enemy.isElite,
+          color: 0xf7944d
+        });
+
+        if (enemy.active) {
+          this.applyTimedDamageEffect(enemy, "burn", burst.burnTickDamage);
         }
       }
     }
@@ -2002,6 +2120,7 @@ export class RunScene extends Phaser.Scene {
     const topY = panelY - panelHeight / 2 + 38;
     const compact = width < 760;
     const activeWeapons = this.run.upgrades.weapons.map(formatWeaponName).join(", ");
+    const activeSynergies = formatActiveSynergySummary(this.run.upgrades);
 
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x0b0e0c, 0.58);
     const panel = this.addOverlayRectangle(panelX, panelY, panelWidth, panelHeight, 0x111612, 0.96);
@@ -2021,8 +2140,11 @@ export class RunScene extends Phaser.Scene {
     this.addOverlayText(leftX, topY + 88, `Оружие: ${activeWeapons}`, compact ? 15 : 16, "#d9cfba")
       .setOrigin(0, 0.5)
       .setWordWrapWidth(panelWidth - 68);
+    this.addOverlayText(leftX, topY + 116, `Синергии: ${activeSynergies}`, compact ? 15 : 16, "#f3d58b")
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(panelWidth - 68);
 
-    const helpY = topY + (compact ? 128 : 138);
+    const helpY = topY + (compact ? 154 : 164);
     this.addOverlayText(leftX, helpY, "Краткая справка", 20, "#f4ead7", "700")
       .setOrigin(0, 0.5)
       .setWordWrapWidth(panelWidth - 68);
@@ -2073,8 +2195,9 @@ export class RunScene extends Phaser.Scene {
     this.currentUpgradeOptions.forEach((upgrade, index) => {
       const x = compact ? width / 2 : startX + index * (cardWidth + 20);
       const y = compact ? startY + index * (cardHeight + 14) : startY;
-      const rarityColor = getRarityColor(upgrade.rarity);
-      const card = this.addOverlayRectangle(x, y, cardWidth, cardHeight, 0x1d211d, 0.97);
+      const rarityColor = getUpgradeCardColor(upgrade);
+      const cardFill = upgrade.category === "synergy" ? 0x24190f : 0x1d211d;
+      const card = this.addOverlayRectangle(x, y, cardWidth, cardHeight, cardFill, 0.97);
       card.setStrokeStyle(2, rarityColor, 1);
       card.setInteractive({ useHandCursor: true });
       card.on("pointerdown", () => this.pickUpgradeByIndex(index));
@@ -2086,7 +2209,7 @@ export class RunScene extends Phaser.Scene {
       this.addOverlayText(compact ? x + 22 : x, compact ? y - 48 : y - 34, upgrade.name, compact ? 18 : 22, "#f4ead7", "700")
         .setOrigin(0.5)
         .setWordWrapWidth(compact ? cardWidth - 92 : cardWidth - 34);
-      this.addOverlayText(x, compact ? y - 16 : y + 2, formatRarityLabel(upgrade.rarity), 14, colorToCss(rarityColor), "700").setOrigin(0.5);
+      this.addOverlayText(x, compact ? y - 16 : y + 2, formatUpgradeCardLabel(upgrade), 14, colorToCss(rarityColor), "700").setOrigin(0.5);
       this.addOverlayText(x, compact ? y + 25 : y + 50, upgrade.description, compact ? 15 : 16, "#cfc4b0")
         .setOrigin(0.5)
         .setWordWrapWidth(cardWidth - 44);
@@ -2101,6 +2224,7 @@ export class RunScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const summary = this.runEndSummary ?? this.finalizeRun(false);
     const bonusBones = summary.survivalBonus + summary.victoryBonus;
+    const activeSynergies = formatActiveSynergySummary(this.run.upgrades);
 
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.76);
     this.addOverlayText(width / 2, height / 2 - 168, "Кладбище забрало своё", width < 520 ? 30 : 38, "#f4ead7", "700")
@@ -2127,9 +2251,12 @@ export class RunScene extends Phaser.Scene {
     this.addOverlayText(width / 2, height / 2 - 14, `Баланс костей: ${this.saveData.bones}`, 20, "#f1dfaa", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayButton(width / 2, height / 2 + 46, 250, 52, "Потратить кости", () => this.showMetaUpgradesOverlay());
-    this.addOverlayButton(width / 2, height / 2 + 110, 210, 48, "Повторить", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 170, 210, 44, "Главное меню", () => this.showMainMenu());
+    this.addOverlayText(width / 2, height / 2 + 24, `Синергии: ${activeSynergies}`, 17, "#f3d58b", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 56);
+    this.addOverlayButton(width / 2, height / 2 + 82, 250, 52, "Потратить кости", () => this.showMetaUpgradesOverlay());
+    this.addOverlayButton(width / 2, height / 2 + 144, 210, 48, "Повторить", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 202, 210, 44, "Главное меню", () => this.showMainMenu());
   }
 
   private showVictoryOverlay(): void {
@@ -2138,6 +2265,7 @@ export class RunScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const summary = this.runEndSummary ?? this.finalizeRun(true);
     const bonusBones = summary.survivalBonus + summary.victoryBonus;
+    const activeSynergies = formatActiveSynergySummary(this.run.upgrades);
 
     this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.74);
     this.addOverlayText(width / 2, height / 2 - 176, "Ночь пережита", width < 520 ? 34 : 44, "#f4ead7", "700")
@@ -2167,9 +2295,12 @@ export class RunScene extends Phaser.Scene {
     this.addOverlayText(width / 2, height / 2 + 12, `Баланс костей: ${this.saveData.bones}`, 20, "#f1dfaa", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayButton(width / 2, height / 2 + 72, 270, 52, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
-    this.addOverlayButton(width / 2, height / 2 + 136, 210, 48, "Следующий забег", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 196, 210, 44, "Главное меню", () => this.showMainMenu());
+    this.addOverlayText(width / 2, height / 2 + 48, `Синергии: ${activeSynergies}`, 17, "#f3d58b", "700")
+      .setOrigin(0.5)
+      .setWordWrapWidth(width - 56);
+    this.addOverlayButton(width / 2, height / 2 + 106, 270, 52, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
+    this.addOverlayButton(width / 2, height / 2 + 168, 210, 48, "Следующий забег", () => this.startRun());
+    this.addOverlayButton(width / 2, height / 2 + 224, 210, 44, "Главное меню", () => this.showMainMenu());
   }
 
   private showMetaUpgradesOverlay(): void {
@@ -2633,6 +2764,27 @@ export class RunScene extends Phaser.Scene {
         .setPosition(weaponX + 44, weaponY + 13 + index * 28);
     });
 
+    const activeSynergyNames = getActiveSynergyNames(this.run.upgrades);
+    const synergyVisible = activeSynergyNames.length > 0 && (this.status === "playing" || this.status === "paused");
+    this.synergyPanel.setVisible(synergyVisible);
+    this.synergyText.setVisible(synergyVisible);
+
+    if (synergyVisible) {
+      const synergyLines = formatSynergyHudLines(activeSynergyNames);
+      const synergyPanelWidth = compact ? Math.min(320, width - 32) : 320;
+      const synergyPanelHeight = 18 + synergyLines.length * 17;
+      const synergyX = compact ? 16 : 24;
+      const synergyY = Math.max(compact ? 130 : 94, weaponY - synergyPanelHeight - 8);
+
+      this.synergyPanel.setPosition(synergyX, synergyY);
+      this.synergyPanel.width = synergyPanelWidth;
+      this.synergyPanel.height = synergyPanelHeight;
+      this.synergyText
+        .setText(["Синергии", ...synergyLines].join("\n"))
+        .setPosition(synergyX + 10, synergyY + 7)
+        .setWordWrapWidth(synergyPanelWidth - 20);
+    }
+
     const bossVisible = Boolean(this.activeFinalBoss?.active);
     this.bossHpBack.setVisible(bossVisible);
     this.bossHpFill.setVisible(bossVisible);
@@ -2704,24 +2856,32 @@ function formatTimer(timeElapsed: number): string {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function getRarityColor(rarity: UpgradeDefinition["rarity"]): number {
-  if (rarity === "rare") {
+function getUpgradeCardColor(upgrade: UpgradeDefinition): number {
+  if (upgrade.category === "synergy") {
+    return 0xf2c15c;
+  }
+
+  if (upgrade.rarity === "rare") {
     return 0xd89cff;
   }
 
-  if (rarity === "uncommon") {
+  if (upgrade.rarity === "uncommon") {
     return 0x7ed6ff;
   }
 
   return 0xd8d0bd;
 }
 
-function formatRarityLabel(rarity: UpgradeDefinition["rarity"]): string {
-  if (rarity === "rare") {
+function formatUpgradeCardLabel(upgrade: UpgradeDefinition): string {
+  if (upgrade.category === "synergy") {
+    return "СИНЕРГИЯ";
+  }
+
+  if (upgrade.rarity === "rare") {
     return "РЕДКОЕ";
   }
 
-  if (rarity === "uncommon") {
+  if (upgrade.rarity === "uncommon") {
     return "НЕОБЫЧНОЕ";
   }
 
@@ -2782,6 +2942,16 @@ function formatWeaponHudLine(weaponId: string, stats: DerivedWeaponStats): strin
   }
 
   return `Костяные ножи  x${stats.projectileCount}  ${stats.cooldown.toFixed(1)}с`;
+}
+
+function formatSynergyHudLines(names: string[]): string[] {
+  const visibleNames = names.slice(0, 3);
+
+  if (names.length > visibleNames.length) {
+    visibleNames.push(`+${names.length - visibleNames.length}`);
+  }
+
+  return visibleNames;
 }
 
 function formatMetaLevelText(id: MetaUpgradeId, level: number): string {
