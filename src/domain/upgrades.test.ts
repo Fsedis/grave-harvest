@@ -45,6 +45,25 @@ describe("getAvailableUpgrades", () => {
 
     expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id.startsWith("unlock_"))).toBe(false);
   });
+
+  it("hides synergy cards until both weapons in the pair are owned", () => {
+    const state = createInitialUpgradeState();
+
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "synergy_knives_candle_burn")).toBe(false);
+
+    applyUpgrade(state, "unlock_candle");
+
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "synergy_knives_candle_burn")).toBe(true);
+  });
+
+  it("hides synergy cards after they reach their single stack", () => {
+    const state = createInitialUpgradeState();
+    applyUpgrade(state, "unlock_candle");
+
+    applyUpgrade(state, "synergy_knives_candle_burn");
+
+    expect(getAvailableUpgrades(state).some((upgrade) => upgrade.id === "synergy_knives_candle_burn")).toBe(false);
+  });
 });
 
 describe("selectUpgradeOptions", () => {
@@ -104,6 +123,17 @@ describe("applyUpgrade", () => {
 
     expect(state.weapons).toContain("holy_candle");
     expect(state.upgrades.unlock_candle).toBe(1);
+  });
+
+  it("activates a synergy without duplicating it", () => {
+    const state = createInitialUpgradeState();
+    applyUpgrade(state, "unlock_candle");
+
+    applyUpgrade(state, "synergy_knives_candle_burn");
+    applyUpgrade(state, "synergy_knives_candle_burn");
+
+    expect(state.synergies).toEqual(["synergy_knives_candle_burn"]);
+    expect(state.upgrades.synergy_knives_candle_burn).toBe(1);
   });
 });
 

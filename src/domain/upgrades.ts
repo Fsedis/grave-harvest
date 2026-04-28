@@ -1,4 +1,5 @@
 import { getWeaponDefinition, type WeaponDefinition } from "../data/weapons";
+import { SYNERGY_DEFINITIONS } from "./synergies";
 
 export type Rarity = "common" | "uncommon" | "rare";
 
@@ -25,6 +26,7 @@ export type UpgradeState = {
   critDamage: number;
   rareChanceBonus: number;
   weapons: string[];
+  synergies: string[];
   weaponStats: Record<string, WeaponStatOverrides>;
   upgrades: Record<string, number>;
 };
@@ -44,9 +46,11 @@ export type UpgradeDefinition = {
   name: string;
   description: string;
   rarity: Rarity;
+  category?: "standard" | "synergy";
   maxStacks: number;
   requirements?: {
     weaponOwned?: string;
+    weaponsOwned?: readonly [string, string];
     weaponNotOwned?: string;
     maxWeaponsNotReached?: boolean;
   };
@@ -74,6 +78,7 @@ export function createInitialUpgradeState(): UpgradeState {
     critDamage: 1.5,
     rareChanceBonus: 0,
     weapons: ["bone_knives"],
+    synergies: [],
     weaponStats: {
       bone_knives: createWeaponStatOverrides()
     },
@@ -334,7 +339,23 @@ export const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
     apply: (state) => {
       addWeapon(state, "crow_swarm");
     }
-  }
+  },
+  ...SYNERGY_DEFINITIONS.map(
+    (synergy): UpgradeDefinition => ({
+      id: synergy.id,
+      name: synergy.name,
+      description: synergy.description,
+      rarity: "rare",
+      category: "synergy",
+      maxStacks: 1,
+      requirements: {
+        weaponsOwned: synergy.weaponPair
+      },
+      apply: (state) => {
+        addSynergy(state, synergy.id);
+      }
+    })
+  )
 ];
 
 export function getAvailableUpgrades(state: UpgradeState): UpgradeDefinition[] {
@@ -344,6 +365,13 @@ export function getAvailableUpgrades(state: UpgradeState): UpgradeDefinition[] {
     }
 
     if (upgrade.requirements?.weaponOwned && !state.weapons.includes(upgrade.requirements.weaponOwned)) {
+      return false;
+    }
+
+    if (
+      upgrade.requirements?.weaponsOwned &&
+      !upgrade.requirements.weaponsOwned.every((weaponId) => state.weapons.includes(weaponId))
+    ) {
       return false;
     }
 
@@ -424,14 +452,26 @@ export function applyUpgrade(state: UpgradeState, upgradeId: string): void {
     throw new Error(`Unknown upgrade: ${upgradeId}`);
   }
 
+  const currentStacks = state.upgrades[upgradeId] ?? 0;
+
+  if (currentStacks >= upgrade.maxStacks) {
+    return;
+  }
+
   upgrade.apply(state);
-  state.upgrades[upgradeId] = (state.upgrades[upgradeId] ?? 0) + 1;
+  state.upgrades[upgradeId] = currentStacks + 1;
 }
 
 function addWeapon(state: UpgradeState, weaponId: string): void {
   if (!state.weapons.includes(weaponId) && state.weapons.length < 4) {
     state.weapons.push(weaponId);
     ensureWeaponStats(state, weaponId);
+  }
+}
+
+function addSynergy(state: UpgradeState, synergyId: string): void {
+  if (!state.synergies.includes(synergyId)) {
+    state.synergies.push(synergyId);
   }
 }
 

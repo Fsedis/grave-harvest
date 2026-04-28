@@ -70,6 +70,7 @@ import {
   type UpgradeDefinition,
   type UpgradeState
 } from "../domain/upgrades";
+import { hasActiveSynergy } from "../domain/synergies";
 import { AudioManager } from "./audio/AudioManager";
 
 const MAP_SIZE = 2200;
@@ -145,6 +146,15 @@ type DamageFeedbackOptions = {
 type PendingBellPulse = {
   fireAt: number;
   pulse: BellPulseSpec;
+};
+
+type ActiveSynergyFlags = {
+  knivesApplyBurn: boolean;
+  knivesPierce: boolean;
+  knivesBleedBonus: boolean;
+  bellCandleBurn: boolean;
+  crowsFlameBurst: boolean;
+  bellBonusCrow: boolean;
 };
 
 type PickupSprite = Phaser.Physics.Arcade.Image & {
@@ -1049,18 +1059,30 @@ export class RunScene extends Phaser.Scene {
       }
 
       const stats = getDerivedWeaponStats(this.run.upgrades, weaponId);
+      const synergyFlags = this.getActiveSynergyFlags();
       this.run.weaponCooldowns[weaponId] = stats.cooldown;
 
       if (weaponId === "bone_knives") {
-        this.fireBoneKnives(stats);
+        this.fireBoneKnives(stats, synergyFlags);
       } else if (weaponId === "holy_candle") {
-        this.tickHolyCandle(stats);
+        this.tickHolyCandle(stats, synergyFlags);
       } else if (weaponId === "grave_bell") {
-        this.ringGraveBell(stats);
+        this.ringGraveBell(stats, synergyFlags);
       } else if (weaponId === "crow_swarm") {
-        this.releaseCrowSwarm(stats);
+        this.releaseCrowSwarm(stats, synergyFlags);
       }
     }
+  }
+
+  private getActiveSynergyFlags(): ActiveSynergyFlags {
+    return {
+      knivesApplyBurn: hasActiveSynergy(this.run.upgrades, "synergy_knives_candle_burn"),
+      knivesPierce: hasActiveSynergy(this.run.upgrades, "synergy_knives_bell_pierce"),
+      knivesBleedBonus: hasActiveSynergy(this.run.upgrades, "synergy_knives_crows_bleed"),
+      bellCandleBurn: hasActiveSynergy(this.run.upgrades, "synergy_candle_bell_burn"),
+      crowsFlameBurst: hasActiveSynergy(this.run.upgrades, "synergy_candle_crows_flame"),
+      bellBonusCrow: hasActiveSynergy(this.run.upgrades, "synergy_bell_crows_bonus")
+    };
   }
 
   private updatePendingBellPulses(): void {
@@ -1140,7 +1162,7 @@ export class RunScene extends Phaser.Scene {
     this.createBurst(enemy.x, enemy.y, effectType === "burn" ? 0xf7944d : 0xc43a3a, 2, 10, 120);
   }
 
-  private fireBoneKnives(stats: DerivedWeaponStats): void {
+  private fireBoneKnives(stats: DerivedWeaponStats, _synergyFlags: ActiveSynergyFlags): void {
     for (let index = 0; index < stats.projectileCount; index += 1) {
       const target = this.findNearestEnemy(stats.range);
 
@@ -1237,7 +1259,7 @@ export class RunScene extends Phaser.Scene {
     this.audio.playSfx("knife_shot");
   }
 
-  private tickHolyCandle(stats: DerivedWeaponStats): void {
+  private tickHolyCandle(stats: DerivedWeaponStats, _synergyFlags: ActiveSynergyFlags): void {
     this.createDamageRadiusRing(this.player.x, this.player.y, 0xf7d779, stats.radius);
 
     for (const child of this.enemies.getChildren()) {
@@ -1262,7 +1284,7 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  private ringGraveBell(stats: DerivedWeaponStats): void {
+  private ringGraveBell(stats: DerivedWeaponStats, _synergyFlags: ActiveSynergyFlags): void {
     getBellPulseSpecs({
       damage: stats.damage,
       pulseCount: stats.pulseCount,
@@ -1309,7 +1331,7 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  private releaseCrowSwarm(stats: DerivedWeaponStats): void {
+  private releaseCrowSwarm(stats: DerivedWeaponStats, _synergyFlags: ActiveSynergyFlags): void {
     for (let index = 0; index < stats.projectileCount; index += 1) {
       const target = this.findRandomEnemy(stats.range);
 
