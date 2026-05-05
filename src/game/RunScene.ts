@@ -18,16 +18,10 @@ import {
 } from "../domain/spawnDirector";
 import { hasWonNight } from "../domain/runRules";
 import {
-  applyMetaToUpgradeState,
-  getMetaRetentionBonus,
   purchaseMetaUpgrade,
   type MetaUpgradeId
 } from "../domain/metaProgression";
-import {
-  applyRunEndSummaryToSave,
-  createRunEndSummary,
-  type RunEndSummary
-} from "../domain/runSummary";
+import type { RunEndSummary } from "../domain/runSummary";
 import {
   createDefaultSaveData,
   loadSave,
@@ -44,11 +38,9 @@ import {
 } from "../domain/weaponEffects";
 import {
   applyUpgrade,
-  createInitialUpgradeState,
   getDerivedWeaponStats,
   selectUpgradeOptions,
-  type UpgradeDefinition,
-  type UpgradeState
+  type UpgradeDefinition
 } from "../domain/upgrades";
 import { AudioManager } from "./audio/AudioManager";
 import { getActiveSynergyFlags } from "./combat/synergyFlags";
@@ -114,6 +106,11 @@ import {
   type PlayerKnockbackState,
   type PlayerWasdKeys
 } from "./player/playerRuntime";
+import {
+  createRunStats,
+  finalizeRunState,
+  type RunStats
+} from "./run/runState";
 import { createGraveyardArena } from "./world/arena";
 import { createGameTextures } from "./world/textures";
 
@@ -144,21 +141,6 @@ type SettingsReturnTarget = "menu" | "pause";
 type PendingBellPulse = {
   fireAt: number;
   pulse: BellPulseSpec;
-};
-
-type RunStats = {
-  hp: number;
-  level: number;
-  xp: number;
-  xpToNext: number;
-  timeElapsed: number;
-  kills: number;
-  bonesCollected: number;
-  spawnBudget: number;
-  weaponCooldowns: Record<string, number>;
-  invulnerableUntil: number;
-  finalBossKilled: boolean;
-  upgrades: UpgradeState;
 };
 
 export class RunScene extends Phaser.Scene {
@@ -332,25 +314,7 @@ export class RunScene extends Phaser.Scene {
     this.currentUpgradeOptions = [];
     this.runEndSummary = null;
     this.nextEnemyRuntimeId = 1;
-    const upgradeState = createInitialUpgradeState();
-    applyMetaToUpgradeState(upgradeState, this.saveData.meta);
-
-    this.run = {
-      hp: upgradeState.maxHp,
-      level: 1,
-      xp: 0,
-      xpToNext: xpRequired(1),
-      timeElapsed: 0,
-      kills: 0,
-      bonesCollected: 0,
-      spawnBudget: 0,
-      weaponCooldowns: {
-        bone_knives: 0.35
-      },
-      invulnerableUntil: 0,
-      finalBossKilled: false,
-      upgrades: upgradeState
-    };
+    this.run = createRunStats(this.saveData.meta);
 
     this.activeFinalBoss = null;
     this.setLowHpWarningVisible(false);
@@ -1033,24 +997,20 @@ export class RunScene extends Phaser.Scene {
   }
 
   private finalizeRun(won: boolean): RunEndSummary {
-    if (this.runEndSummary) {
-      return this.runEndSummary;
+    const result = finalizeRunState({
+      run: this.run,
+      saveData: this.saveData,
+      won,
+      existingSummary: this.runEndSummary
+    });
+    this.saveData = result.saveData;
+    this.runEndSummary = result.summary;
+
+    if (result.changed) {
+      this.persistSaveData();
     }
 
-    const summary = createRunEndSummary({
-      droppedBones: this.run.bonesCollected,
-      timeElapsed: this.run.timeElapsed,
-      won,
-      retentionBonus: getMetaRetentionBonus(this.saveData.meta)
-    });
-    this.saveData = applyRunEndSummaryToSave(this.saveData, summary, {
-      kills: this.run.kills,
-      level: this.run.level
-    });
-    this.persistSaveData();
-    this.runEndSummary = summary;
-
-    return summary;
+    return result.summary;
   }
 
   private clearEntities(): void {
