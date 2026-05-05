@@ -92,6 +92,13 @@ import { formatTimer } from "./formatters/time";
 import { formatUpgradeCardLabel, getUpgradeCardColor } from "./formatters/upgrades";
 import { roundVolume } from "./formatters/volume";
 import { formatWeaponHudLine, formatWeaponName, getWeaponIconTexture } from "./formatters/weapons";
+import {
+  addMiniSettingsButton,
+  addOverlayButton,
+  addOverlayRectangle,
+  addOverlayText,
+  clearOverlayObjects
+} from "./overlays/overlayPrimitives";
 
 const MAP_SIZE = 2200;
 const PLAYER_RADIUS = 16;
@@ -2085,11 +2092,11 @@ export class RunScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const titleSize = Phaser.Math.Clamp(Math.floor(width / 12.6), 32, 58);
     const subtitleWidth = Math.max(260, width - 80);
-    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x0a0d0b, 0.78);
-    this.addOverlayText(width / 2, height / 2 - 135, "GRAVE HARVEST", titleSize, "#f2e7ce", "700")
+    addOverlayRectangle(this, this.overlayObjects, width / 2, height / 2, width, height, 0x0a0d0b, 0.78);
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 - 135, "GRAVE HARVEST", titleSize, "#f2e7ce", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 36);
-    this.addOverlayText(
+    addOverlayText(this, this.overlayObjects, 
       width / 2,
       height / 2 - 72,
       "Двигайся WASD или стрелками. Атаки автоматические. Собирай души, чтобы стать сильнее.",
@@ -2098,7 +2105,7 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(subtitleWidth);
-    this.addOverlayText(
+    addOverlayText(this, this.overlayObjects, 
       width / 2,
       height / 2 - 24,
       `Кости: ${this.saveData.bones}   Лучшее: ${formatTimer(this.saveData.stats.bestTime)}   Победы: ${this.saveData.stats.wins}/${this.saveData.stats.totalRuns}`,
@@ -2108,11 +2115,11 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(subtitleWidth);
-    this.addOverlayButton(width / 2, height / 2 + 18, 220, 52, "Начать ночь", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 78, 230, 46, "Настройки", () => this.showSettingsOverlay("menu"));
-    this.addOverlayButton(width / 2, height / 2 + 134, 270, 46, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
-    this.addOverlayButton(width / 2, height / 2 + 190, 210, 42, "Сбросить прогресс", () => this.showResetProgressConfirmOverlay());
-    this.addOverlayText(width / 2, height / 2 + 238, "Enter тоже запускает забег", 15, "#8f9687").setOrigin(0.5);
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 18, 220, 52, "Начать ночь", () => this.startRun());
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 78, 230, 46, "Настройки", () => this.showSettingsOverlay("menu"));
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 134, 270, 46, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 190, 210, 42, "Сбросить прогресс", () => this.showResetProgressConfirmOverlay());
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 + 238, "Enter тоже запускает забег", 15, "#8f9687").setOrigin(0.5);
   }
 
   private showPauseOverlay(): void {
@@ -2130,12 +2137,12 @@ export class RunScene extends Phaser.Scene {
     const activeWeapons = this.run.upgrades.weapons.map(formatWeaponName).join(", ");
     const activeSynergies = formatActiveSynergySummary(this.run.upgrades);
 
-    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x0b0e0c, 0.58);
-    const panel = this.addOverlayRectangle(panelX, panelY, panelWidth, panelHeight, 0x111612, 0.96);
+    addOverlayRectangle(this, this.overlayObjects, width / 2, height / 2, width, height, 0x0b0e0c, 0.58);
+    const panel = addOverlayRectangle(this, this.overlayObjects, panelX, panelY, panelWidth, panelHeight, 0x111612, 0.96);
     panel.setStrokeStyle(2, 0x4d5a43, 0.95);
-    this.addOverlayText(panelX, topY, "Пауза", compact ? 34 : 42, "#f4ead7", "700").setOrigin(0.5);
+    addOverlayText(this, this.overlayObjects, panelX, topY, "Пауза", compact ? 34 : 42, "#f4ead7", "700").setOrigin(0.5);
 
-    this.addOverlayText(
+    addOverlayText(this, this.overlayObjects, 
       leftX,
       topY + 54,
       `Время ${formatTimer(this.run.timeElapsed)}   Уровень ${this.run.level}   Убийства ${this.run.kills}   Кости ${this.run.bonesCollected}`,
@@ -2145,15 +2152,15 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0, 0.5)
       .setWordWrapWidth(panelWidth - 68);
-    this.addOverlayText(leftX, topY + 88, `Оружие: ${activeWeapons}`, compact ? 15 : 16, "#d9cfba")
+    addOverlayText(this, this.overlayObjects, leftX, topY + 88, `Оружие: ${activeWeapons}`, compact ? 15 : 16, "#d9cfba")
       .setOrigin(0, 0.5)
       .setWordWrapWidth(panelWidth - 68);
-    this.addOverlayText(leftX, topY + 116, `Синергии: ${activeSynergies}`, compact ? 15 : 16, "#f3d58b")
+    addOverlayText(this, this.overlayObjects, leftX, topY + 116, `Синергии: ${activeSynergies}`, compact ? 15 : 16, "#f3d58b")
       .setOrigin(0, 0.5)
       .setWordWrapWidth(panelWidth - 68);
 
     const helpY = topY + (compact ? 154 : 164);
-    this.addOverlayText(leftX, helpY, "Краткая справка", 20, "#f4ead7", "700")
+    addOverlayText(this, this.overlayObjects, leftX, helpY, "Краткая справка", 20, "#f4ead7", "700")
       .setOrigin(0, 0.5)
       .setWordWrapWidth(panelWidth - 68);
     [
@@ -2163,7 +2170,7 @@ export class RunScene extends Phaser.Scene {
       "На level-up выбирай карту мышью или клавишами 1 / 2 / 3.",
       "Цель: пережить ночь и убить Капитана после 10:00."
     ].forEach((line, index) => {
-      this.addOverlayText(leftX, helpY + 32 + index * 24, line, compact ? 14 : 16, "#cfc4b0")
+      addOverlayText(this, this.overlayObjects, leftX, helpY + 32 + index * 24, line, compact ? 14 : 16, "#cfc4b0")
         .setOrigin(0, 0.5)
         .setWordWrapWidth(panelWidth - 68);
     });
@@ -2173,14 +2180,14 @@ export class RunScene extends Phaser.Scene {
     const buttonWidth = compact ? 154 : 170;
     const totalButtonWidth = buttonWidth * 4 + buttonGap * 3;
     const firstButtonX = panelX - totalButtonWidth / 2 + buttonWidth / 2;
-    this.addOverlayButton(firstButtonX, buttonY, buttonWidth, 44, "Продолжить", () => this.resumeRun());
-    this.addOverlayButton(firstButtonX + (buttonWidth + buttonGap), buttonY, buttonWidth, 44, "Настройки", () =>
+    addOverlayButton(this, this.overlayObjects, firstButtonX, buttonY, buttonWidth, 44, "Продолжить", () => this.resumeRun());
+    addOverlayButton(this, this.overlayObjects, firstButtonX + (buttonWidth + buttonGap), buttonY, buttonWidth, 44, "Настройки", () =>
       this.showSettingsOverlay("pause")
     );
-    this.addOverlayButton(firstButtonX + (buttonWidth + buttonGap) * 2, buttonY, buttonWidth, 44, "Заново", () =>
+    addOverlayButton(this, this.overlayObjects, firstButtonX + (buttonWidth + buttonGap) * 2, buttonY, buttonWidth, 44, "Заново", () =>
       this.startRun()
     );
-    this.addOverlayButton(firstButtonX + (buttonWidth + buttonGap) * 3, buttonY, buttonWidth, 44, "Главное меню", () =>
+    addOverlayButton(this, this.overlayObjects, firstButtonX + (buttonWidth + buttonGap) * 3, buttonY, buttonWidth, 44, "Главное меню", () =>
       this.showMainMenu()
     );
   }
@@ -2189,8 +2196,8 @@ export class RunScene extends Phaser.Scene {
     this.clearOverlay();
     const { width, height } = this.scale;
     const compact = width < 760;
-    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090b0a, 0.64);
-    this.addOverlayText(width / 2, 72, "Выбери проклятие", width < 520 ? 30 : 40, "#f4ead7", "700")
+    addOverlayRectangle(this, this.overlayObjects, width / 2, height / 2, width, height, 0x090b0a, 0.64);
+    addOverlayText(this, this.overlayObjects, width / 2, 72, "Выбери проклятие", width < 520 ? 30 : 40, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 40);
 
@@ -2205,24 +2212,24 @@ export class RunScene extends Phaser.Scene {
       const y = compact ? startY + index * (cardHeight + 14) : startY;
       const rarityColor = getUpgradeCardColor(upgrade);
       const cardFill = upgrade.category === "synergy" ? 0x24190f : 0x1d211d;
-      const card = this.addOverlayRectangle(x, y, cardWidth, cardHeight, cardFill, 0.97);
+      const card = addOverlayRectangle(this, this.overlayObjects, x, y, cardWidth, cardHeight, cardFill, 0.97);
       card.setStrokeStyle(2, rarityColor, 1);
       card.setInteractive({ useHandCursor: true });
       card.on("pointerdown", () => this.pickUpgradeByIndex(index));
 
-      this.addOverlayText(compact ? x - cardWidth / 2 + 28 : x, compact ? y - 48 : y - 74, `${index + 1}`, 22, "#151a16", "700")
+      addOverlayText(this, this.overlayObjects, compact ? x - cardWidth / 2 + 28 : x, compact ? y - 48 : y - 74, `${index + 1}`, 22, "#151a16", "700")
         .setOrigin(0.5)
         .setBackgroundColor("#f1e3bd")
         .setPadding(9, 3, 9, 3);
-      this.addOverlayText(compact ? x + 22 : x, compact ? y - 48 : y - 34, upgrade.name, compact ? 18 : 22, "#f4ead7", "700")
+      addOverlayText(this, this.overlayObjects, compact ? x + 22 : x, compact ? y - 48 : y - 34, upgrade.name, compact ? 18 : 22, "#f4ead7", "700")
         .setOrigin(0.5)
         .setWordWrapWidth(compact ? cardWidth - 92 : cardWidth - 34);
-      this.addOverlayText(x, compact ? y - 16 : y + 2, formatUpgradeCardLabel(upgrade), 14, colorToCss(rarityColor), "700").setOrigin(0.5);
-      this.addOverlayText(x, compact ? y + 25 : y + 50, upgrade.description, compact ? 15 : 16, "#cfc4b0")
+      addOverlayText(this, this.overlayObjects, x, compact ? y - 16 : y + 2, formatUpgradeCardLabel(upgrade), 14, colorToCss(rarityColor), "700").setOrigin(0.5);
+      addOverlayText(this, this.overlayObjects, x, compact ? y + 25 : y + 50, upgrade.description, compact ? 15 : 16, "#cfc4b0")
         .setOrigin(0.5)
         .setWordWrapWidth(cardWidth - 44);
       const stacks = this.run.upgrades.upgrades[upgrade.id] ?? 0;
-      this.addOverlayText(x, compact ? y + 58 : y + 88, `${stacks}/${upgrade.maxStacks}`, 14, "#8d9587").setOrigin(0.5);
+      addOverlayText(this, this.overlayObjects, x, compact ? y + 58 : y + 88, `${stacks}/${upgrade.maxStacks}`, 14, "#8d9587").setOrigin(0.5);
     });
   }
 
@@ -2234,11 +2241,11 @@ export class RunScene extends Phaser.Scene {
     const bonusBones = summary.survivalBonus + summary.victoryBonus;
     const activeSynergies = formatActiveSynergySummary(this.run.upgrades);
 
-    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.76);
-    this.addOverlayText(width / 2, height / 2 - 168, "Кладбище забрало своё", width < 520 ? 30 : 38, "#f4ead7", "700")
+    addOverlayRectangle(this, this.overlayObjects, width / 2, height / 2, width, height, 0x090807, 0.76);
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 - 168, "Кладбище забрало своё", width < 520 ? 30 : 38, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
-    this.addOverlayText(
+    addOverlayText(this, this.overlayObjects, 
       width / 2,
       height / 2 - 100,
       `Выжил ${formatTimer(this.run.timeElapsed)}   Убийства ${this.run.kills}   Уровень ${this.run.level}`,
@@ -2247,7 +2254,7 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayText(
+    addOverlayText(this, this.overlayObjects, 
       width / 2,
       height / 2 - 54,
       `Добыто ${summary.droppedBones}   Бонус ${bonusBones}   Сохранено ${summary.retainedBones}`,
@@ -2256,15 +2263,15 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayText(width / 2, height / 2 - 14, `Баланс костей: ${this.saveData.bones}`, 20, "#f1dfaa", "700")
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 - 14, `Баланс костей: ${this.saveData.bones}`, 20, "#f1dfaa", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayText(width / 2, height / 2 + 24, `Синергии: ${activeSynergies}`, 17, "#f3d58b", "700")
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 + 24, `Синергии: ${activeSynergies}`, 17, "#f3d58b", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 56);
-    this.addOverlayButton(width / 2, height / 2 + 82, 250, 52, "Потратить кости", () => this.showMetaUpgradesOverlay());
-    this.addOverlayButton(width / 2, height / 2 + 144, 210, 48, "Повторить", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 202, 210, 44, "Главное меню", () => this.showMainMenu());
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 82, 250, 52, "Потратить кости", () => this.showMetaUpgradesOverlay());
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 144, 210, 48, "Повторить", () => this.startRun());
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 202, 210, 44, "Главное меню", () => this.showMainMenu());
   }
 
   private showVictoryOverlay(): void {
@@ -2275,14 +2282,14 @@ export class RunScene extends Phaser.Scene {
     const bonusBones = summary.survivalBonus + summary.victoryBonus;
     const activeSynergies = formatActiveSynergySummary(this.run.upgrades);
 
-    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.74);
-    this.addOverlayText(width / 2, height / 2 - 176, "Ночь пережита", width < 520 ? 34 : 44, "#f4ead7", "700")
+    addOverlayRectangle(this, this.overlayObjects, width / 2, height / 2, width, height, 0x090807, 0.74);
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 - 176, "Ночь пережита", width < 520 ? 34 : 44, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
-    this.addOverlayText(width / 2, height / 2 - 118, "Капитан мёртв.", 22, "#f1dfaa", "700")
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 - 118, "Капитан мёртв.", 22, "#f1dfaa", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayText(
+    addOverlayText(this, this.overlayObjects, 
       width / 2,
       height / 2 - 72,
       `Время ${formatTimer(this.run.timeElapsed)}   Убийства ${this.run.kills}   Уровень ${this.run.level}`,
@@ -2291,7 +2298,7 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayText(
+    addOverlayText(this, this.overlayObjects, 
       width / 2,
       height / 2 - 28,
       `Добыто ${summary.droppedBones}   Бонус ${bonusBones}   Сохранено ${summary.retainedBones}`,
@@ -2300,15 +2307,15 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayText(width / 2, height / 2 + 12, `Баланс костей: ${this.saveData.bones}`, 20, "#f1dfaa", "700")
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 + 12, `Баланс костей: ${this.saveData.bones}`, 20, "#f1dfaa", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 48);
-    this.addOverlayText(width / 2, height / 2 + 48, `Синергии: ${activeSynergies}`, 17, "#f3d58b", "700")
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 + 48, `Синергии: ${activeSynergies}`, 17, "#f3d58b", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 56);
-    this.addOverlayButton(width / 2, height / 2 + 106, 270, 52, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
-    this.addOverlayButton(width / 2, height / 2 + 168, 210, 48, "Следующий забег", () => this.startRun());
-    this.addOverlayButton(width / 2, height / 2 + 224, 210, 44, "Главное меню", () => this.showMainMenu());
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 106, 270, 52, "Постоянные улучшения", () => this.showMetaUpgradesOverlay());
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 168, 210, 48, "Следующий забег", () => this.startRun());
+    addOverlayButton(this, this.overlayObjects, width / 2, height / 2 + 224, 210, 44, "Главное меню", () => this.showMainMenu());
   }
 
   private showMetaUpgradesOverlay(): void {
@@ -2324,11 +2331,11 @@ export class RunScene extends Phaser.Scene {
     const cardHeight = width < 720 ? 86 : 74;
     const startY = width < 720 ? 150 : 154;
 
-    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.78);
-    this.addOverlayText(width / 2, 58, "Постоянные улучшения", width < 520 ? 30 : 40, "#f4ead7", "700")
+    addOverlayRectangle(this, this.overlayObjects, width / 2, height / 2, width, height, 0x090807, 0.78);
+    addOverlayText(this, this.overlayObjects, width / 2, 58, "Постоянные улучшения", width < 520 ? 30 : 40, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
-    this.addOverlayText(width / 2, 104, `Кости: ${this.saveData.bones}`, 22, "#e5d39f", "700")
+    addOverlayText(this, this.overlayObjects, width / 2, 104, `Кости: ${this.saveData.bones}`, 22, "#e5d39f", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(panelWidth);
 
@@ -2338,15 +2345,15 @@ export class RunScene extends Phaser.Scene {
       const cost = getMetaUpgradeCost(definition.id, level);
       const canBuy = canBuyMetaUpgrade(this.saveData, definition.id);
       const y = startY + index * (cardHeight + 10);
-      const card = this.addOverlayRectangle(width / 2, y, cardWidth, cardHeight, 0x171c17, 0.97);
+      const card = addOverlayRectangle(this, this.overlayObjects, width / 2, y, cardWidth, cardHeight, 0x171c17, 0.97);
       card.setStrokeStyle(1, canBuy ? 0xc9b46a : 0x44503e, 0.9);
 
       const leftX = width / 2 - cardWidth / 2 + 20;
       const buttonX = width / 2 + cardWidth / 2 - 72;
-      this.addOverlayText(leftX, y - 24, definition.name, 18, "#f4ead7", "700")
+      addOverlayText(this, this.overlayObjects, leftX, y - 24, definition.name, 18, "#f4ead7", "700")
         .setOrigin(0, 0.5)
         .setWordWrapWidth(cardWidth - 170);
-      this.addOverlayText(
+      addOverlayText(this, this.overlayObjects, 
         leftX,
         y,
         `${formatMetaLevelText(definition.id, level)}   ${definition.effectPerLevel}`,
@@ -2355,10 +2362,10 @@ export class RunScene extends Phaser.Scene {
       )
         .setOrigin(0, 0.5)
         .setWordWrapWidth(cardWidth - 170);
-      this.addOverlayText(leftX, y + 23, `Уровень ${level}/${definition.maxLevel}`, 14, "#8d9587")
+      addOverlayText(this, this.overlayObjects, leftX, y + 23, `Уровень ${level}/${definition.maxLevel}`, 14, "#8d9587")
         .setOrigin(0, 0.5);
 
-      this.addOverlayButton(
+      addOverlayButton(this, this.overlayObjects, 
         buttonX,
         y,
         122,
@@ -2369,8 +2376,8 @@ export class RunScene extends Phaser.Scene {
       );
     });
 
-    this.addOverlayButton(width / 2 - 112, height - 54, 190, 46, "Начать ночь", () => this.startRun());
-    this.addOverlayButton(width / 2 + 112, height - 54, 150, 46, "Назад", () => this.showMainMenu());
+    addOverlayButton(this, this.overlayObjects, width / 2 - 112, height - 54, 190, 46, "Начать ночь", () => this.startRun());
+    addOverlayButton(this, this.overlayObjects, width / 2 + 112, height - 54, 150, 46, "Назад", () => this.showMainMenu());
   }
 
   private buyMetaUpgrade(id: MetaUpgradeId): void {
@@ -2397,11 +2404,11 @@ export class RunScene extends Phaser.Scene {
     const startY = 166;
     const rowGap = 60;
 
-    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.8);
-    this.addOverlayText(width / 2, titleY, "Настройки", width < 520 ? 32 : 42, "#f4ead7", "700")
+    addOverlayRectangle(this, this.overlayObjects, width / 2, height / 2, width, height, 0x090807, 0.8);
+    addOverlayText(this, this.overlayObjects, width / 2, titleY, "Настройки", width < 520 ? 32 : 42, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
-    this.addOverlayText(width / 2, titleY + 48, "Визуальный отклик", 18, "#e5d39f", "700")
+    addOverlayText(this, this.overlayObjects, width / 2, titleY + 48, "Визуальный отклик", 18, "#e5d39f", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(panelWidth);
 
@@ -2446,8 +2453,8 @@ export class RunScene extends Phaser.Scene {
       (value) => this.updateGameSettings({ musicVolume: value })
     );
 
-    this.addOverlayButton(width / 2 - 112, height - 54, 150, 46, "Назад", () => this.closeSettingsOverlay());
-    this.addOverlayButton(width / 2 + 112, height - 54, 210, 46, "Сбросить прогресс", () =>
+    addOverlayButton(this, this.overlayObjects, width / 2 - 112, height - 54, 150, 46, "Назад", () => this.closeSettingsOverlay());
+    addOverlayButton(this, this.overlayObjects, width / 2 + 112, height - 54, 210, 46, "Сбросить прогресс", () =>
       this.showResetProgressConfirmOverlay()
     );
   }
@@ -2483,11 +2490,11 @@ export class RunScene extends Phaser.Scene {
     this.clearOverlay();
 
     const { width, height } = this.scale;
-    this.addOverlayRectangle(width / 2, height / 2, width, height, 0x090807, 0.82);
-    this.addOverlayText(width / 2, height / 2 - 94, "Сбросить прогресс?", width < 520 ? 28 : 36, "#f4ead7", "700")
+    addOverlayRectangle(this, this.overlayObjects, width / 2, height / 2, width, height, 0x090807, 0.82);
+    addOverlayText(this, this.overlayObjects, width / 2, height / 2 - 94, "Сбросить прогресс?", width < 520 ? 28 : 36, "#f4ead7", "700")
       .setOrigin(0.5)
       .setWordWrapWidth(width - 44);
-    this.addOverlayText(
+    addOverlayText(this, this.overlayObjects, 
       width / 2,
       height / 2 - 34,
       "Это удалит сохранённые кости, постоянные улучшения, статистику и настройки на этом устройстве.",
@@ -2496,11 +2503,11 @@ export class RunScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setWordWrapWidth(Math.min(width - 56, 560));
-    this.addOverlayButton(width / 2 - 112, height / 2 + 58, 190, 48, "Да, сбросить", () => {
+    addOverlayButton(this, this.overlayObjects, width / 2 - 112, height / 2 + 58, 190, 48, "Да, сбросить", () => {
       this.resetSaveData();
       this.showMainMenu();
     });
-    this.addOverlayButton(width / 2 + 112, height / 2 + 58, 150, 48, "Назад", () => this.showMainMenu());
+    addOverlayButton(this, this.overlayObjects, width / 2 + 112, height / 2 + 58, 150, 48, "Назад", () => this.showMainMenu());
   }
 
   private addSettingsToggle(
@@ -2511,7 +2518,7 @@ export class RunScene extends Phaser.Scene {
     value: boolean,
     onClick: () => void
   ): void {
-    const card = this.addOverlayRectangle(x, y, width, 56, 0x171c17, 0.97);
+    const card = addOverlayRectangle(this, this.overlayObjects, x, y, width, 56, 0x171c17, 0.97);
     card.setStrokeStyle(1, value ? 0xc9b46a : 0x44503e, 0.9);
     card.setInteractive({ useHandCursor: true });
     card.on("pointerdown", onClick);
@@ -2519,17 +2526,17 @@ export class RunScene extends Phaser.Scene {
     const leftX = x - width / 2 + 20;
     const toggleWidth = 104;
     const toggleX = x + width / 2 - toggleWidth / 2 - 16;
-    const toggle = this.addOverlayRectangle(toggleX, y, toggleWidth, 34, value ? 0xc9b46a : 0x4b4438, 1);
+    const toggle = addOverlayRectangle(this, this.overlayObjects, toggleX, y, toggleWidth, 34, value ? 0xc9b46a : 0x4b4438, 1);
     toggle.setStrokeStyle(2, value ? 0x4a3921 : 0x2c2d28, 1);
     toggle.setInteractive({ useHandCursor: true });
     toggle.on("pointerover", () => toggle.setFillStyle(value ? 0xe1cd7d : 0x62594a, 1));
     toggle.on("pointerout", () => toggle.setFillStyle(value ? 0xc9b46a : 0x4b4438, 1));
     toggle.on("pointerdown", onClick);
 
-    this.addOverlayText(leftX, y, label, 20, "#f4ead7", "700")
+    addOverlayText(this, this.overlayObjects, leftX, y, label, 20, "#f4ead7", "700")
       .setOrigin(0, 0.5)
       .setWordWrapWidth(width - toggleWidth - 60);
-    this.addOverlayText(toggleX, y, value ? "Вкл" : "Выкл", 18, value ? "#17140f" : "#c9c0ad", "700")
+    addOverlayText(this, this.overlayObjects, toggleX, y, value ? "Вкл" : "Выкл", 18, value ? "#17140f" : "#c9c0ad", "700")
       .setOrigin(0.5);
   }
 
@@ -2542,7 +2549,7 @@ export class RunScene extends Phaser.Scene {
     onChange: (value: number) => void
   ): void {
     const clampedValue = Phaser.Math.Clamp(value, 0, 1);
-    const card = this.addOverlayRectangle(x, y, width, 56, 0x171c17, 0.97);
+    const card = addOverlayRectangle(this, this.overlayObjects, x, y, width, 56, 0x171c17, 0.97);
     card.setStrokeStyle(1, 0x44503e, 0.9);
 
     const leftX = x - width / 2 + 20;
@@ -2553,89 +2560,19 @@ export class RunScene extends Phaser.Scene {
     const trackWidth = 108;
     const fillWidth = Math.max(2, trackWidth * clampedValue);
 
-    this.addOverlayText(leftX, y, label, 20, "#f4ead7", "700")
+    addOverlayText(this, this.overlayObjects, leftX, y, label, 20, "#f4ead7", "700")
       .setOrigin(0, 0.5)
       .setWordWrapWidth(width - 310);
-    this.addMiniSettingsButton(minusX, y, "-", () => onChange(roundVolume(clampedValue - 0.1)));
-    this.addOverlayRectangle(trackX, y, trackWidth, 8, 0x4b4438, 1);
-    this.addOverlayRectangle(trackX - trackWidth / 2 + fillWidth / 2, y, fillWidth, 8, 0xc9b46a, 1);
-    this.addMiniSettingsButton(plusX, y, "+", () => onChange(roundVolume(clampedValue + 0.1)));
-    this.addOverlayText(valueX, y, `${Math.round(clampedValue * 100)}%`, 16, "#e5d39f", "700")
+    addMiniSettingsButton(this, this.overlayObjects, minusX, y, "-", () => onChange(roundVolume(clampedValue - 0.1)));
+    addOverlayRectangle(this, this.overlayObjects, trackX, y, trackWidth, 8, 0x4b4438, 1);
+    addOverlayRectangle(this, this.overlayObjects, trackX - trackWidth / 2 + fillWidth / 2, y, fillWidth, 8, 0xc9b46a, 1);
+    addMiniSettingsButton(this, this.overlayObjects, plusX, y, "+", () => onChange(roundVolume(clampedValue + 0.1)));
+    addOverlayText(this, this.overlayObjects, valueX, y, `${Math.round(clampedValue * 100)}%`, 16, "#e5d39f", "700")
       .setOrigin(0.5);
   }
 
-  private addMiniSettingsButton(x: number, y: number, label: string, onClick: () => void): void {
-    const button = this.addOverlayRectangle(x, y, 36, 32, 0xc9b46a, 1);
-    button.setStrokeStyle(2, 0x4a3921, 1);
-    button.setInteractive({ useHandCursor: true });
-    button.on("pointerover", () => button.setFillStyle(0xe1cd7d, 1));
-    button.on("pointerout", () => button.setFillStyle(0xc9b46a, 1));
-    button.on("pointerdown", onClick);
-    this.addOverlayText(x, y - 1, label, 20, "#17140f", "700").setOrigin(0.5);
-  }
-
-  private addOverlayButton(
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    label: string,
-    onClick: () => void,
-    enabled = true
-  ): void {
-    const rect = this.addOverlayRectangle(x, y, width, height, enabled ? 0xc9b46a : 0x4b4438, 1);
-    rect.setStrokeStyle(2, enabled ? 0x4a3921 : 0x2c2d28, 1);
-
-    if (enabled) {
-      rect.setInteractive({ useHandCursor: true });
-      rect.on("pointerover", () => rect.setFillStyle(0xe1cd7d, 1));
-      rect.on("pointerout", () => rect.setFillStyle(0xc9b46a, 1));
-      rect.on("pointerdown", onClick);
-    }
-
-    this.addOverlayText(x, y, label, 20, enabled ? "#17140f" : "#9a917e", "700").setOrigin(0.5);
-  }
-
-  private addOverlayRectangle(
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    color: number,
-    alpha: number
-  ): Phaser.GameObjects.Rectangle {
-    const rect = this.add
-      .rectangle(x, y, width, height, color, alpha)
-      .setScrollFactor(0)
-      .setDepth(2000);
-    this.overlayObjects.push(rect);
-    return rect;
-  }
-
-  private addOverlayText(
-    x: number,
-    y: number,
-    text: string,
-    fontSize: number,
-    color: string,
-    fontStyle = "400"
-  ): Phaser.GameObjects.Text {
-    const label = this.add
-      .text(x, y, text, {
-        fontFamily: "Inter, Arial, sans-serif",
-        fontSize: `${fontSize}px`,
-        fontStyle,
-        color,
-        align: "center"
-      })
-      .setScrollFactor(0)
-      .setDepth(2001);
-    this.overlayObjects.push(label);
-    return label;
-  }
-
   private clearOverlay(): void {
-    this.overlayObjects.forEach((object) => object.destroy());
+    clearOverlayObjects(this.overlayObjects);
     this.overlayObjects = [];
   }
 
