@@ -51,8 +51,6 @@ import {
   type StorageLike
 } from "../domain/save";
 import {
-  consumeTimedDamageTicks,
-  createTimedDamageEffect,
   getBellPulseSpecs,
   type BellPulseSpec,
   type TimedDamageEffect
@@ -66,7 +64,6 @@ import {
   type UpgradeDefinition,
   type UpgradeState
 } from "../domain/upgrades";
-import { hasActiveSynergy } from "../domain/synergies";
 import {
   getBellBurnTickDamage,
   getBleedingTargetKnifeDamage,
@@ -76,6 +73,19 @@ import {
   getKnifePierceBonus
 } from "../domain/synergyEffects";
 import { AudioManager } from "./audio/AudioManager";
+import { getActiveSynergyFlags, type ActiveSynergyFlags } from "./combat/synergyFlags";
+import {
+  findNearestTarget,
+  findRandomTarget,
+  findTargetByRuntimeId,
+  getHomingCandidatesFromTargets
+} from "./combat/targeting";
+import {
+  applyTimedDamageToTarget,
+  consumeTimedDamageForTarget,
+  getTimedDamageColor,
+  type TimedDamageType
+} from "./combat/timedDamage";
 import { colorToCss } from "./formatters/colors";
 import { getDeathBurstColor, getEnemyDisplaySize, getEnemyTexture } from "./formatters/enemies";
 import { HudController, type HudLayoutSnapshot } from "./hud/HudController";
@@ -165,15 +175,6 @@ type DamageFeedbackOptions = {
 type PendingBellPulse = {
   fireAt: number;
   pulse: BellPulseSpec;
-};
-
-type ActiveSynergyFlags = {
-  knivesApplyBurn: boolean;
-  knivesPierce: boolean;
-  knivesBleedBonus: boolean;
-  bellCandleBurn: boolean;
-  crowsFlameBurst: boolean;
-  bellBonusCrow: boolean;
 };
 
 type PickupSprite = Phaser.Physics.Arcade.Image & {
@@ -994,7 +995,7 @@ export class RunScene extends Phaser.Scene {
       }
 
       const stats = getDerivedWeaponStats(this.run.upgrades, weaponId);
-      const synergyFlags = this.getActiveSynergyFlags();
+      const synergyFlags = getActiveSynergyFlags(this.run.upgrades);
       this.run.weaponCooldowns[weaponId] = stats.cooldown;
 
       if (weaponId === "bone_knives") {
@@ -1009,24 +1010,13 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  private getActiveSynergyFlags(): ActiveSynergyFlags {
-    return {
-      knivesApplyBurn: hasActiveSynergy(this.run.upgrades, "synergy_knives_candle_burn"),
-      knivesPierce: hasActiveSynergy(this.run.upgrades, "synergy_knives_bell_pierce"),
-      knivesBleedBonus: hasActiveSynergy(this.run.upgrades, "synergy_knives_crows_bleed"),
-      bellCandleBurn: hasActiveSynergy(this.run.upgrades, "synergy_candle_bell_burn"),
-      crowsFlameBurst: hasActiveSynergy(this.run.upgrades, "synergy_candle_crows_flame"),
-      bellBonusCrow: hasActiveSynergy(this.run.upgrades, "synergy_bell_crows_bonus")
-    };
-  }
-
   private updatePendingBellPulses(): void {
     if (this.pendingBellPulses.length === 0) {
       return;
     }
 
     const stillPending: PendingBellPulse[] = [];
-    const synergyFlags = this.getActiveSynergyFlags();
+    const synergyFlags = getActiveSynergyFlags(this.run.upgrades);
 
     for (const pendingPulse of this.pendingBellPulses) {
       if (pendingPulse.fireAt <= this.run.timeElapsed) {
@@ -1059,21 +1049,16 @@ export class RunScene extends Phaser.Scene {
 
   private tickEnemyTimedDamage(
     enemy: EnemySprite,
-    effectType: "burn" | "bleed",
+    effectType: TimedDamageType,
     color: number
   ): void {
-    const field = effectType === "burn" ? "burnEffect" : "bleedEffect";
-    const effect = enemy[field];
-
-    if (!effect) {
+    const result = consumeTimedDamageForTarget(enemy, effectType, this.run.timeElapsed);
+    if (!result) {
       return;
     }
 
-    const result = consumeTimedDamageTicks(effect, this.run.timeElapsed);
-    enemy[field] = result.active ? result.effect : null;
-
     for (let tick = 0; tick < result.ticks && enemy.active; tick += 1) {
-      this.damageEnemy(enemy, effect.damagePerTick, {
+      this.damageEnemy(enemy, result.damagePerTick, {
         important: enemy.isElite,
         color
       });
@@ -1085,17 +1070,11 @@ export class RunScene extends Phaser.Scene {
 
   private applyTimedDamageEffect(
     enemy: EnemySprite,
-    effectType: "burn" | "bleed",
+    effectType: TimedDamageType,
     damagePerTick: number
   ): void {
-    const field = effectType === "burn" ? "burnEffect" : "bleedEffect";
-    enemy[field] = createTimedDamageEffect({
-      currentTime: this.run.timeElapsed,
-      damagePerTick,
-      duration: 2,
-      tickInterval: 0.5
-    });
-    this.createBurst(enemy.x, enemy.y, effectType === "burn" ? 0xf7944d : 0xc43a3a, 2, 10, 120);
+    applyTimedDamageToTarget(enemy, effectType, this.run.timeElapsed, damagePerTick);
+    this.createBurst(enemy.x, enemy.y, getTimedDamageColor(effectType), 2, 10, 120);
   }
 
   private fireBoneKnives(stats: DerivedWeaponStats, synergyFlags: ActiveSynergyFlags): void {
@@ -1111,49 +1090,13 @@ export class RunScene extends Phaser.Scene {
   }
 
   private findNearestEnemy(range: number): EnemySprite | null {
-    let nearest: EnemySprite | null = null;
-    let nearestDistanceSq = range * range;
-
-    for (const child of this.enemies.getChildren()) {
-      const enemy = child as EnemySprite;
-
-      if (!enemy.active) {
-        continue;
-      }
-
-      const distanceSq = Phaser.Math.Distance.Squared(this.player.x, this.player.y, enemy.x, enemy.y);
-
-      if (distanceSq <= nearestDistanceSq) {
-        nearest = enemy;
-        nearestDistanceSq = distanceSq;
-      }
-    }
-
-    return nearest;
+    return findNearestTarget(this.enemies.getChildren() as EnemySprite[], this.player, range);
   }
 
   private findRandomEnemy(range: number): EnemySprite | null {
-    const candidates: EnemySprite[] = [];
-
-    for (const child of this.enemies.getChildren()) {
-      const enemy = child as EnemySprite;
-
-      if (!enemy.active) {
-        continue;
-      }
-
-      const distanceSq = Phaser.Math.Distance.Squared(this.player.x, this.player.y, enemy.x, enemy.y);
-
-      if (distanceSq <= range * range) {
-        candidates.push(enemy);
-      }
-    }
-
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    return candidates[Phaser.Math.Between(0, candidates.length - 1)];
+    return findRandomTarget(this.enemies.getChildren() as EnemySprite[], this.player, range, (max) =>
+      Phaser.Math.Between(0, max)
+    );
   }
 
   private fireKnifeAt(
@@ -1489,27 +1432,11 @@ export class RunScene extends Phaser.Scene {
   }
 
   private getHomingCandidates(x: number, y: number): HomingTargetCandidate[] {
-    return this.enemies.getChildren().map((child) => {
-      const enemy = child as EnemySprite;
-
-      return {
-        id: enemy.runtimeId,
-        active: enemy.active,
-        distanceSq: Phaser.Math.Distance.Squared(x, y, enemy.x, enemy.y)
-      };
-    });
+    return getHomingCandidatesFromTargets(this.enemies.getChildren() as EnemySprite[], { x, y });
   }
 
   private findEnemyByRuntimeId(runtimeId: number): EnemySprite | null {
-    for (const child of this.enemies.getChildren()) {
-      const enemy = child as EnemySprite;
-
-      if (enemy.active && enemy.runtimeId === runtimeId) {
-        return enemy;
-      }
-    }
-
-    return null;
+    return findTargetByRuntimeId(this.enemies.getChildren() as EnemySprite[], runtimeId);
   }
 
   private damageEnemy(enemy: EnemySprite, amount: number, feedback: DamageFeedbackOptions = {}): void {
