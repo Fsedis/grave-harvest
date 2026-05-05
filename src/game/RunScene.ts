@@ -6,11 +6,6 @@ import {
   shouldApplyScreenShake,
   shouldShowDamageNumber
 } from "../domain/effects";
-import {
-  getContactKnockback,
-  getInputDirection,
-  stepVelocityTowardTarget
-} from "../domain/movement";
 import type { PickupType } from "../domain/pickups";
 import { xpRequired } from "../domain/progression";
 import {
@@ -106,19 +101,26 @@ import { renderPauseOverlay } from "./overlays/pauseOverlay";
 import { renderResetProgressConfirmOverlay } from "./overlays/resetProgressOverlay";
 import { renderGameOverOverlay, renderVictoryOverlay } from "./overlays/runResultOverlay";
 import { renderSettingsOverlay } from "./overlays/settingsOverlay";
+import {
+  applyPlayerHitFeedback,
+  createIdlePlayerKnockback,
+  createPlayer,
+  PLAYER_INVULNERABILITY_SECONDS,
+  PLAYER_RADIUS,
+  readPlayerInput,
+  resetPlayerForRun,
+  stopPlayer,
+  updatePlayerMovement as updatePlayerMovementRuntime,
+  type PlayerKnockbackState,
+  type PlayerWasdKeys
+} from "./player/playerRuntime";
 import { createGraveyardArena } from "./world/arena";
 import { createGameTextures } from "./world/textures";
 
 const MAP_SIZE = 2200;
-const PLAYER_RADIUS = 16;
 const HARD_ENEMY_CAP = ENEMY_SPAWN_CAPS.hard;
 const HARD_PROJECTILE_CAP = 300;
 const HARD_PICKUP_CAP = 400;
-const PLAYER_INVULNERABILITY_SECONDS = 0.45;
-const PLAYER_ACCELERATION = 1550;
-const PLAYER_DECELERATION = 2200;
-const PLAYER_CONTACT_KNOCKBACK_SPEED = 260;
-const PLAYER_CONTACT_KNOCKBACK_SECONDS = 0.16;
 const ENEMY_SEPARATION_STRENGTH = 1.02;
 const FIRST_RUN_HINTS = [
   "Двигайся WASD или стрелками. Остановиться на кладбище — плохая идея.",
@@ -166,7 +168,7 @@ export class RunScene extends Phaser.Scene {
   private projectiles!: Phaser.Physics.Arcade.Group;
   private pickups!: Phaser.Physics.Arcade.Group;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private wasd!: Record<"w" | "a" | "s" | "d", Phaser.Input.Keyboard.Key>;
+  private wasd!: PlayerWasdKeys;
   private run!: RunStats;
   private currentUpgradeOptions: UpgradeDefinition[] = [];
   private overlayObjects: Phaser.GameObjects.GameObject[] = [];
@@ -183,8 +185,7 @@ export class RunScene extends Phaser.Scene {
   private audio!: AudioManager;
   private balanceDebugEnabled = false;
   private balanceDebugFps = 60;
-  private playerKnockbackUntil = 0;
-  private playerKnockbackVelocity = { x: 0, y: 0 };
+  private playerKnockback: PlayerKnockbackState = createIdlePlayerKnockback();
 
   constructor() {
     super("RunScene");
@@ -283,11 +284,7 @@ export class RunScene extends Phaser.Scene {
     this.projectiles = this.physics.add.group({ maxSize: HARD_PROJECTILE_CAP });
     this.pickups = this.physics.add.group({ maxSize: HARD_PICKUP_CAP });
 
-    this.player = this.physics.add.image(MAP_SIZE / 2, MAP_SIZE / 2, "player");
-    this.player.setDepth(20);
-    this.player.setCollideWorldBounds(true);
-    this.player.setSize(28, 28);
-    this.cameras.main.startFollow(this.player, true, 0.14, 0.14);
+    this.player = createPlayer(this, MAP_SIZE);
   }
 
   private createInput(): void {
@@ -356,13 +353,8 @@ export class RunScene extends Phaser.Scene {
     };
 
     this.activeFinalBoss = null;
-    this.playerKnockbackUntil = 0;
-    this.playerKnockbackVelocity = { x: 0, y: 0 };
     this.setLowHpWarningVisible(false);
-    this.player.enableBody(true, MAP_SIZE / 2, MAP_SIZE / 2, true, true);
-    this.player.clearTint();
-    this.player.setVelocity(0, 0);
-    this.cameras.main.startFollow(this.player, true, 0.14, 0.14);
+    this.playerKnockback = resetPlayerForRun(this, this.player, MAP_SIZE);
     this.physics.resume();
     this.status = "playing";
     this.setHudVisible(true);
@@ -470,44 +462,14 @@ export class RunScene extends Phaser.Scene {
   }
 
   private updatePlayerMovement(dt: number): void {
-    const direction = getInputDirection({
-      left: Boolean(this.cursors.left?.isDown || this.wasd.a.isDown),
-      right: Boolean(this.cursors.right?.isDown || this.wasd.d.isDown),
-      up: Boolean(this.cursors.up?.isDown || this.wasd.w.isDown),
-      down: Boolean(this.cursors.down?.isDown || this.wasd.s.isDown)
-    });
-    const targetVelocity = {
-      x: direction.x * this.run.upgrades.moveSpeed,
-      y: direction.y * this.run.upgrades.moveSpeed
-    };
-    const body = this.player.body as Phaser.Physics.Arcade.Body | null;
-    const knockbackActive = this.run.timeElapsed < this.playerKnockbackUntil;
-    const activeKnockback = knockbackActive ? this.playerKnockbackVelocity : { x: 0, y: 0 };
-    const currentVelocity = body
-      ? {
-          x: body.velocity.x - activeKnockback.x,
-          y: body.velocity.y - activeKnockback.y
-        }
-      : {
-          x: 0,
-          y: 0
-        };
-    const nextVelocity = stepVelocityTowardTarget({
-      current: currentVelocity,
-      target: targetVelocity,
-      acceleration: PLAYER_ACCELERATION,
-      deceleration: PLAYER_DECELERATION,
+    this.playerKnockback = updatePlayerMovementRuntime({
+      player: this.player,
+      controls: readPlayerInput(this.cursors, this.wasd),
+      moveSpeed: this.run.upgrades.moveSpeed,
+      timeElapsed: this.run.timeElapsed,
+      knockback: this.playerKnockback,
       dt
     });
-
-    if (knockbackActive) {
-      nextVelocity.x += activeKnockback.x;
-      nextVelocity.y += activeKnockback.y;
-    } else {
-      this.playerKnockbackVelocity = { x: 0, y: 0 };
-    }
-
-    this.player.setVelocity(nextVelocity.x, nextVelocity.y);
   }
 
   private updateSpawnDirector(dt: number): void {
@@ -634,26 +596,18 @@ export class RunScene extends Phaser.Scene {
   private damagePlayer(amount: number, source?: { x: number; y: number }): void {
     this.run.hp = Math.max(0, this.run.hp - amount);
     this.run.invulnerableUntil = this.run.timeElapsed + PLAYER_INVULNERABILITY_SECONDS;
-    if (source) {
-      this.playerKnockbackVelocity = getContactKnockback({
-        player: {
-          x: this.player.x,
-          y: this.player.y
-        },
-        enemy: source,
-        speed: PLAYER_CONTACT_KNOCKBACK_SPEED
-      });
-      this.playerKnockbackUntil = this.run.timeElapsed + PLAYER_CONTACT_KNOCKBACK_SECONDS;
-    }
-    this.player.setTintFill(0xff5a54);
-    this.shakeCamera(120, 0.006);
-    this.audio.playSfx("player_hit");
-    this.createBurst(this.player.x, this.player.y, 0xff5a54, 5, 22, 150);
-    this.createRingBurst(this.player.x, this.player.y, 0xff5a54, PLAYER_RADIUS + 14);
-    this.time.delayedCall(90, () => {
-      if (this.status === "playing") {
-        this.player.clearTint();
-      }
+    this.playerKnockback = applyPlayerHitFeedback({
+      scene: this,
+      player: this.player,
+      currentKnockback: this.playerKnockback,
+      timeElapsed: this.run.timeElapsed,
+      source,
+      isPlaying: () => this.status === "playing",
+      shakeCamera: (durationMs, intensity) => this.shakeCamera(durationMs, intensity),
+      playSfx: () => this.audio.playSfx("player_hit"),
+      createBurst: (x, y, color, count, distance, duration) =>
+        this.createBurst(x, y, color, count, distance, duration),
+      createRingBurst: (x, y, color, radius) => this.createRingBurst(x, y, color, radius)
     });
 
     if (this.run.hp <= 0) {
@@ -1016,9 +970,7 @@ export class RunScene extends Phaser.Scene {
     this.audio.playSfx("level_up");
     this.createLevelUpFlash();
     this.status = "level_up";
-    this.playerKnockbackUntil = 0;
-    this.playerKnockbackVelocity = { x: 0, y: 0 };
-    this.player.setVelocity(0, 0);
+    this.playerKnockback = stopPlayer(this.player);
     this.physics.pause();
     this.currentUpgradeOptions = selectUpgradeOptions(this.run.upgrades);
     this.showLevelUpOverlay();
@@ -1051,9 +1003,7 @@ export class RunScene extends Phaser.Scene {
 
   private endRun(): void {
     this.status = "game_over";
-    this.playerKnockbackUntil = 0;
-    this.playerKnockbackVelocity = { x: 0, y: 0 };
-    this.player.setVelocity(0, 0);
+    this.playerKnockback = stopPlayer(this.player);
     this.player.setTint(0x8a1d1d);
     this.physics.pause();
     this.audio.stopRunMusic();
@@ -1069,9 +1019,7 @@ export class RunScene extends Phaser.Scene {
 
   private winRun(): void {
     this.status = "victory";
-    this.playerKnockbackUntil = 0;
-    this.playerKnockbackVelocity = { x: 0, y: 0 };
-    this.player.setVelocity(0, 0);
+    this.playerKnockback = stopPlayer(this.player);
     this.physics.pause();
     this.audio.stopRunMusic();
     this.audio.playSfx("victory");
@@ -1317,7 +1265,7 @@ export class RunScene extends Phaser.Scene {
     const playerBody = this.player?.body as Phaser.Physics.Arcade.Body | null;
     const playerSpeed = playerBody ? Math.hypot(playerBody.velocity.x, playerBody.velocity.y) : 0;
     const hitCooldown = run
-      ? Math.max(0, run.invulnerableUntil - run.timeElapsed, this.playerKnockbackUntil - run.timeElapsed)
+      ? Math.max(0, run.invulnerableUntil - run.timeElapsed, this.playerKnockback.until - run.timeElapsed)
       : 0;
 
     return {
