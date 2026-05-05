@@ -3,11 +3,8 @@ import { getEnemyDefinition, type EnemyDefinition } from "../data/enemies";
 import { getBalanceDebugEnabled } from "../domain/balance";
 import {
   getDamageNumberVisual,
-  getDamageRadiusRingVisual,
-  getDecorativeRingVisual,
   shouldApplyScreenShake,
-  shouldShowDamageNumber,
-  type RingVisual
+  shouldShowDamageNumber
 } from "../domain/effects";
 import {
   getContactKnockback,
@@ -88,6 +85,13 @@ import {
 } from "./combat/timedDamage";
 import { colorToCss } from "./formatters/colors";
 import { getDeathBurstColor, getEnemyDisplaySize, getEnemyTexture } from "./formatters/enemies";
+import { clearPhysicsGroups } from "./entities/physicsGroups";
+import {
+  createBurstFx,
+  createDamageRadiusRingFx,
+  createRingBurstFx,
+  showWorldTextFx
+} from "./fx/combatFx";
 import { HudController, type HudLayoutSnapshot } from "./hud/HudController";
 import { renderLevelUpOverlay } from "./overlays/levelUpOverlay";
 import { renderMainMenuOverlay } from "./overlays/menuOverlay";
@@ -1709,67 +1713,19 @@ export class RunScene extends Phaser.Scene {
     distance: number,
     duration: number
   ): void {
-    for (let index = 0; index < count; index += 1) {
-      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-      const travel = Phaser.Math.Between(Math.floor(distance * 0.45), distance);
-      const particle = this.add.circle(x, y, Phaser.Math.Between(2, 4), color, 0.88).setDepth(16);
-
-      this.tweens.add({
-        targets: particle,
-        x: x + Math.cos(angle) * travel,
-        y: y + Math.sin(angle) * travel,
-        alpha: 0,
-        scale: 0.25,
-        duration,
-        ease: "Quad.easeOut",
-        onComplete: () => particle.destroy()
-      });
-    }
+    createBurstFx(this, x, y, color, count, distance, duration);
   }
 
   private createRingBurst(x: number, y: number, color: number, radius: number): void {
-    this.createRingEffect(x, y, color, getDecorativeRingVisual(radius));
+    createRingBurstFx(this, x, y, color, radius);
   }
 
   private createDamageRadiusRing(x: number, y: number, color: number, radius: number): void {
-    this.createRingEffect(x, y, color, getDamageRadiusRingVisual(radius));
-  }
-
-  private createRingEffect(x: number, y: number, color: number, visual: RingVisual): void {
-    const ring = this.add.circle(x, y, visual.radius, color, 0).setStrokeStyle(2, color, 0.82).setDepth(14);
-    ring.setScale(visual.startScale);
-
-    this.tweens.add({
-      targets: ring,
-      alpha: 0,
-      scale: visual.endScale,
-      duration: visual.durationMs,
-      ease: "Quad.easeOut",
-      onComplete: () => ring.destroy()
-    });
+    createDamageRadiusRingFx(this, x, y, color, radius);
   }
 
   private showWorldText(x: number, y: number, text: string, color: string, fontSize: number): void {
-    const label = this.add
-      .text(x, y, text, {
-        fontFamily: "Inter, Arial, sans-serif",
-        fontSize: `${fontSize}px`,
-        fontStyle: "700",
-        color,
-        stroke: "#15110d",
-        strokeThickness: 4
-      })
-      .setOrigin(0.5)
-      .setDepth(120);
-
-    this.tweens.add({
-      targets: label,
-      y: y - 36,
-      alpha: 0,
-      duration: 1200,
-      ease: "Quad.easeOut",
-      onComplete: () => label.destroy()
-    });
+    showWorldTextFx(this, x, y, text, color, fontSize);
   }
 
   private createLevelUpFlash(): void {
@@ -1890,9 +1846,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   private clearEntities(): void {
-    this.enemies.clear(true, true);
-    this.projectiles.clear(true, true);
-    this.pickups.clear(true, true);
+    clearPhysicsGroups([this.enemies, this.projectiles, this.pickups]);
     this.clearDamageNumbers();
     this.clearHints();
     this.pendingBellPulses = [];
