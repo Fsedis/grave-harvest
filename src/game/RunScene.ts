@@ -9,11 +9,9 @@ import {
 import {
   getContactKnockback,
   getInputDirection,
-  getSeparationPadding,
-  getSeparationWeight,
   stepVelocityTowardTarget
 } from "../domain/movement";
-import { selectPickupMergeTarget, type PickupMergeCandidate } from "../domain/pickups";
+import type { PickupType } from "../domain/pickups";
 import { xpRequired } from "../domain/progression";
 import {
   ENEMY_SPAWN_CAPS,
@@ -23,7 +21,6 @@ import {
   pickEnemyForBudget,
   type ScriptedEnemySpawn
 } from "../domain/spawnDirector";
-import { selectHomingTarget, type HomingTargetCandidate } from "../domain/homing";
 import { hasWonNight } from "../domain/runRules";
 import {
   applyMetaToUpgradeState,
@@ -48,44 +45,52 @@ import {
   type StorageLike
 } from "../domain/save";
 import {
-  getBellPulseSpecs,
-  type BellPulseSpec,
-  type TimedDamageEffect
+  type BellPulseSpec
 } from "../domain/weaponEffects";
 import {
   applyUpgrade,
   createInitialUpgradeState,
   getDerivedWeaponStats,
-  type DerivedWeaponStats,
   selectUpgradeOptions,
   type UpgradeDefinition,
   type UpgradeState
 } from "../domain/upgrades";
-import {
-  getBellBurnTickDamage,
-  getBleedingTargetKnifeDamage,
-  getCrowBleedTickDamage,
-  getCrowFlameBurstSpec,
-  getKnifeBurnTickDamage,
-  getKnifePierceBonus
-} from "../domain/synergyEffects";
 import { AudioManager } from "./audio/AudioManager";
-import { getActiveSynergyFlags, type ActiveSynergyFlags } from "./combat/synergyFlags";
-import {
-  findNearestTarget,
-  findRandomTarget,
-  findTargetByRuntimeId,
-  getHomingCandidatesFromTargets
-} from "./combat/targeting";
+import { getActiveSynergyFlags } from "./combat/synergyFlags";
 import {
   applyTimedDamageToTarget,
   consumeTimedDamageForTarget,
   getTimedDamageColor,
   type TimedDamageType
 } from "./combat/timedDamage";
+import { updateProjectiles, type ProjectileUpdateContext } from "./combat/projectiles";
+import {
+  applyBellPulse,
+  fireBoneKnives,
+  releaseCrowSwarm,
+  ringGraveBell,
+  tickHolyCandle,
+  type WeaponAttackContext
+} from "./combat/weaponAttacks";
 import { colorToCss } from "./formatters/colors";
-import { getDeathBurstColor, getEnemyDisplaySize, getEnemyTexture } from "./formatters/enemies";
+import { getDeathBurstColor } from "./formatters/enemies";
+import {
+  calculateEnemySeparation,
+  spawnEnemyInstance as createEnemyInstance,
+  updateEnemyVisual
+} from "./entities/enemies";
 import { clearPhysicsGroups } from "./entities/physicsGroups";
+import {
+  getPickupFxColor,
+  mergePickupValue as mergePickupEntityValue,
+  spawnPickupEntity,
+  updatePickupMovement
+} from "./entities/pickups";
+import type {
+  DamageFeedbackOptions,
+  EnemySprite,
+  PickupSprite
+} from "./entities/types";
 import {
   createBurstFx,
   createDamageRadiusRingFx,
@@ -113,7 +118,6 @@ const PLAYER_DECELERATION = 2200;
 const PLAYER_CONTACT_KNOCKBACK_SPEED = 260;
 const PLAYER_CONTACT_KNOCKBACK_SECONDS = 0.16;
 const ENEMY_SEPARATION_STRENGTH = 1.02;
-const ENEMY_SEPARATION_NEIGHBORS = 10;
 const FIRST_RUN_HINTS = [
   "Двигайся WASD или стрелками. Остановиться на кладбище — плохая идея.",
   "Атаки автоматические. Держи дистанцию и веди толпу за собой.",
@@ -133,57 +137,9 @@ type RunStatus =
 
 type SettingsReturnTarget = "menu" | "pause";
 
-type EnemySprite = Phaser.Physics.Arcade.Image & {
-  runtimeId: number;
-  burnEffect: TimedDamageEffect | null;
-  bleedEffect: TimedDamageEffect | null;
-  def: EnemyDefinition;
-  hp: number;
-  maxHp: number;
-  spawnedAt: number;
-  isElite: boolean;
-  eliteName: string;
-  nextDashAt: number;
-  dashUntil: number;
-  visualPulseSeed: number;
-  baseDisplayWidth: number;
-  baseDisplayHeight: number;
-  baseTint: number;
-  scriptedSpawnId: string;
-};
-
-type ProjectileSprite = Phaser.Physics.Arcade.Image & {
-  damage: number;
-  range: number;
-  traveled: number;
-  pierce: number;
-  isCrit: boolean;
-  damageTextColor: number;
-  appliesBurn: boolean;
-  appliesBleed: boolean;
-  bonusAgainstBleeding: boolean;
-  createsFlameBurst: boolean;
-  hitEnemyIds: number[];
-  kind: "knife" | "crow";
-  targetEnemyId: number | null;
-  homingSpeed: number;
-  homingRange: number;
-};
-
-type DamageFeedbackOptions = {
-  important?: boolean;
-  color?: number;
-  showNumber?: boolean;
-};
-
 type PendingBellPulse = {
   fireAt: number;
   pulse: BellPulseSpec;
-};
-
-type PickupSprite = Phaser.Physics.Arcade.Image & {
-  pickupType: "xp" | "bones";
-  value: number;
 };
 
 type RunStats = {
@@ -309,7 +265,7 @@ export class RunScene extends Phaser.Scene {
     if (this.status !== "playing") {
       return;
     }
-    this.updateProjectiles(dt);
+    updateProjectiles(this.getProjectileUpdateContext(), dt);
     if (this.status !== "playing") {
       return;
     }
@@ -836,62 +792,22 @@ export class RunScene extends Phaser.Scene {
   }
 
   private spawnEnemyInstance(definition: EnemyDefinition, scripted?: ScriptedEnemySpawn): EnemySprite | null {
-    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    const radius = scripted ? Phaser.Math.Between(560, 720) : Phaser.Math.Between(520, 860);
-    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * radius, 40, MAP_SIZE - 40);
-    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * radius, 40, MAP_SIZE - 40);
+    const enemy = createEnemyInstance({
+      enemies: this.enemies,
+      player: this.player,
+      definition,
+      runtimeId: this.nextEnemyRuntimeId,
+      timeElapsed: this.run.timeElapsed,
+      mapSize: MAP_SIZE,
+      hardEnemyCap: HARD_ENEMY_CAP,
+      scripted
+    });
 
-    if (scripted && this.enemies.countActive(true) >= HARD_ENEMY_CAP) {
-      this.freeEnemySlotForScriptedSpawn();
+    if (enemy) {
+      this.nextEnemyRuntimeId += 1;
     }
-
-    const enemy = this.enemies.get(x, y, getEnemyTexture(definition.id)) as EnemySprite | null;
-
-    if (!enemy) {
-      return null;
-    }
-
-    const scaleMultiplier = scripted?.scaleMultiplier ?? 1;
-    const display = getEnemyDisplaySize(definition);
-    enemy.runtimeId = this.nextEnemyRuntimeId;
-    this.nextEnemyRuntimeId += 1;
-    enemy.burnEffect = null;
-    enemy.bleedEffect = null;
-    enemy.def = definition;
-    enemy.hp = Math.round(definition.hp * (scripted?.hpMultiplier ?? 1));
-    enemy.maxHp = enemy.hp;
-    enemy.spawnedAt = this.run.timeElapsed;
-    enemy.isElite = Boolean(scripted);
-    enemy.eliteName = scripted?.name ?? "";
-    enemy.nextDashAt = definition.behavior === "dash" ? this.run.timeElapsed + 1.4 : Number.POSITIVE_INFINITY;
-    enemy.dashUntil = 0;
-    enemy.visualPulseSeed = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    enemy.baseDisplayWidth = display.width * scaleMultiplier;
-    enemy.baseDisplayHeight = display.height * scaleMultiplier;
-    enemy.baseTint = scripted?.color ?? definition.color;
-    enemy.scriptedSpawnId = scripted?.id ?? "";
-    enemy.setTexture(getEnemyTexture(definition.id));
-    enemy.setActive(true);
-    enemy.setVisible(true);
-    enemy.enableBody(true, x, y, true, true);
-    enemy.setSize(definition.radius * 1.6, definition.radius * 1.6);
-    enemy.setDisplaySize(enemy.baseDisplayWidth, enemy.baseDisplayHeight);
-    enemy.setTint(enemy.baseTint);
-    enemy.setAlpha(definition.id === "ghost" ? 0.72 : 1);
-    enemy.setDepth(scripted ? 17 : 15);
 
     return enemy;
-  }
-
-  private freeEnemySlotForScriptedSpawn(): void {
-    for (const child of this.enemies.getChildren()) {
-      const enemy = child as EnemySprite;
-
-      if (enemy.active && !enemy.isElite) {
-        enemy.disableBody(true, true);
-        return;
-      }
-    }
   }
 
   private updateEnemies(dt: number): void {
@@ -926,7 +842,7 @@ export class RunScene extends Phaser.Scene {
         }
       }
 
-      const separation = this.calculateEnemySeparation(enemy);
+      const separation = calculateEnemySeparation(this.enemies, enemy);
       const movement = direction.add(separation.scale(separationStrength));
 
       if (movement.lengthSq() > 0) {
@@ -934,7 +850,7 @@ export class RunScene extends Phaser.Scene {
       }
 
       enemy.setVelocity(movement.x * speed, movement.y * speed);
-      this.updateEnemyVisual(enemy);
+      updateEnemyVisual(enemy, this.run.timeElapsed);
 
       if (distance < PLAYER_RADIUS + enemy.def.radius && this.run.timeElapsed >= this.run.invulnerableUntil) {
         this.damagePlayer(enemy.def.damage, enemy);
@@ -944,18 +860,6 @@ export class RunScene extends Phaser.Scene {
         enemy.x -= direction.x * 18 * dt;
         enemy.y -= direction.y * 18 * dt;
       }
-    }
-  }
-
-  private updateEnemyVisual(enemy: EnemySprite): void {
-    if (enemy.def.id === "ghost") {
-      const phase = (this.run.timeElapsed - enemy.spawnedAt) * 4.2 + enemy.visualPulseSeed;
-      enemy.setAlpha(0.58 + Math.sin(phase) * 0.16);
-    }
-
-    if (enemy.isElite) {
-      const pulse = 1 + Math.sin(this.run.timeElapsed * 4 + enemy.visualPulseSeed) * 0.035;
-      enemy.setDisplaySize(enemy.baseDisplayWidth * pulse, enemy.baseDisplayHeight * pulse);
     }
   }
 
@@ -990,6 +894,8 @@ export class RunScene extends Phaser.Scene {
   }
 
   private updateWeapons(dt: number): void {
+    const weaponContext = this.getWeaponAttackContext();
+
     for (const weaponId of this.run.upgrades.weapons) {
       this.run.weaponCooldowns[weaponId] ??= 0.1;
       this.run.weaponCooldowns[weaponId] -= dt;
@@ -1003,13 +909,13 @@ export class RunScene extends Phaser.Scene {
       this.run.weaponCooldowns[weaponId] = stats.cooldown;
 
       if (weaponId === "bone_knives") {
-        this.fireBoneKnives(stats, synergyFlags);
+        fireBoneKnives(weaponContext, stats, synergyFlags);
       } else if (weaponId === "holy_candle") {
-        this.tickHolyCandle(stats, synergyFlags);
+        tickHolyCandle(weaponContext, stats);
       } else if (weaponId === "grave_bell") {
-        this.ringGraveBell(stats, synergyFlags);
+        ringGraveBell(weaponContext, stats, synergyFlags);
       } else if (weaponId === "crow_swarm") {
-        this.releaseCrowSwarm(stats, synergyFlags);
+        releaseCrowSwarm(weaponContext, stats, synergyFlags);
       }
     }
   }
@@ -1024,7 +930,7 @@ export class RunScene extends Phaser.Scene {
 
     for (const pendingPulse of this.pendingBellPulses) {
       if (pendingPulse.fireAt <= this.run.timeElapsed) {
-        this.applyBellPulse(pendingPulse.pulse, synergyFlags);
+        applyBellPulse(this.getWeaponAttackContext(), pendingPulse.pulse, synergyFlags);
         if (this.status !== "playing") {
           break;
         }
@@ -1081,366 +987,39 @@ export class RunScene extends Phaser.Scene {
     this.createBurst(enemy.x, enemy.y, getTimedDamageColor(effectType), 2, 10, 120);
   }
 
-  private fireBoneKnives(stats: DerivedWeaponStats, synergyFlags: ActiveSynergyFlags): void {
-    for (let index = 0; index < stats.projectileCount; index += 1) {
-      const target = this.findNearestEnemy(stats.range);
-
-      if (!target) {
-        return;
-      }
-
-      this.fireKnifeAt(target, stats, index, stats.projectileCount, synergyFlags);
-    }
+  private getWeaponAttackContext(): WeaponAttackContext {
+    return {
+      player: this.player,
+      enemies: this.enemies,
+      projectiles: this.projectiles,
+      upgrades: this.run.upgrades,
+      timeElapsed: this.run.timeElapsed,
+      hardProjectileCap: HARD_PROJECTILE_CAP,
+      playSfx: (event) => this.audio.playSfx(event),
+      damageEnemy: (enemy, amount, feedback) => this.damageEnemy(enemy, amount, feedback),
+      applyTimedDamageEffect: (enemy, effectType, damagePerTick) =>
+        this.applyTimedDamageEffect(enemy, effectType, damagePerTick),
+      createBurst: (x, y, color, count, distance, duration) =>
+        this.createBurst(x, y, color, count, distance, duration),
+      createDamageRadiusRing: (x, y, color, radius) =>
+        this.createDamageRadiusRing(x, y, color, radius),
+      queueBellPulse: (fireAt, pulse) => this.pendingBellPulses.push({ fireAt, pulse }),
+      shakeCamera: (durationMs, intensity) => this.shakeCamera(durationMs, intensity)
+    };
   }
 
-  private findNearestEnemy(range: number): EnemySprite | null {
-    return findNearestTarget(this.enemies.getChildren() as EnemySprite[], this.player, range);
-  }
-
-  private findRandomEnemy(range: number): EnemySprite | null {
-    return findRandomTarget(this.enemies.getChildren() as EnemySprite[], this.player, range, (max) =>
-      Phaser.Math.Between(0, max)
-    );
-  }
-
-  private fireKnifeAt(
-    target: EnemySprite,
-    stats: DerivedWeaponStats,
-    index: number,
-    total: number,
-    synergyFlags: ActiveSynergyFlags
-  ): void {
-    if (this.projectiles.countActive(true) >= HARD_PROJECTILE_CAP) {
-      return;
-    }
-
-    const projectile = this.projectiles.get(this.player.x, this.player.y, "knife") as ProjectileSprite | null;
-
-    if (!projectile) {
-      return;
-    }
-
-    const aim = Phaser.Math.Angle.Between(this.player.x, this.player.y, target.x, target.y);
-    const spread = total > 1 ? Phaser.Math.DegToRad((index - (total - 1) / 2) * 9) : 0;
-    const angle = aim + spread;
-    const speed = stats.projectileSpeed ?? 420;
-    const crit = Math.random() < this.run.upgrades.critChance;
-    const critMultiplier = crit ? this.run.upgrades.critDamage : 1;
-
-    projectile.damage = Math.round(stats.damage * critMultiplier);
-    projectile.range = stats.range;
-    projectile.traveled = 0;
-    projectile.pierce = (stats.pierce ?? 0) + (synergyFlags.knivesPierce ? getKnifePierceBonus() : 0);
-    projectile.isCrit = crit;
-    projectile.damageTextColor = crit ? 0xf2d36b : 0xf3ead0;
-    projectile.appliesBurn = synergyFlags.knivesApplyBurn;
-    projectile.appliesBleed = false;
-    projectile.bonusAgainstBleeding = synergyFlags.knivesBleedBonus;
-    projectile.createsFlameBurst = false;
-    projectile.hitEnemyIds = [];
-    projectile.kind = "knife";
-    projectile.targetEnemyId = null;
-    projectile.homingSpeed = 0;
-    projectile.homingRange = 0;
-    projectile.setTexture("knife");
-    projectile.setActive(true);
-    projectile.setVisible(true);
-    projectile.enableBody(true, this.player.x, this.player.y, true, true);
-    projectile.setDepth(18);
-    projectile.setRotation(angle);
-    projectile.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-    this.audio.playSfx("knife_shot");
-  }
-
-  private tickHolyCandle(stats: DerivedWeaponStats, _synergyFlags: ActiveSynergyFlags): void {
-    this.createDamageRadiusRing(this.player.x, this.player.y, 0xf7d779, stats.radius);
-
-    for (const child of this.enemies.getChildren()) {
-      const enemy = child as EnemySprite;
-
-      if (!enemy.active) {
-        continue;
-      }
-
-      const distanceSq = Phaser.Math.Distance.Squared(this.player.x, this.player.y, enemy.x, enemy.y);
-
-      if (distanceSq <= stats.radius * stats.radius) {
-        this.damageEnemy(enemy, Math.max(1, Math.round(stats.damage)), {
-          important: enemy.isElite,
-          color: 0xf7d779
-        });
-
-        if (stats.burn && enemy.active) {
-          this.applyTimedDamageEffect(enemy, "burn", Math.max(1, Math.round(stats.damage * 0.35)));
-        }
-      }
-    }
-  }
-
-  private ringGraveBell(stats: DerivedWeaponStats, synergyFlags: ActiveSynergyFlags): void {
-    getBellPulseSpecs({
-      damage: stats.damage,
-      pulseCount: stats.pulseCount,
-      radius: stats.radius
-    }).forEach((pulse) => {
-      if (pulse.delayMs === 0) {
-        this.applyBellPulse(pulse, synergyFlags);
-        return;
-      }
-
-      this.pendingBellPulses.push({
-        fireAt: this.run.timeElapsed + pulse.delayMs / 1000,
-        pulse
-      });
-    });
-  }
-
-  private applyBellPulse(pulse: BellPulseSpec, synergyFlags: ActiveSynergyFlags): void {
-    this.createDamageRadiusRing(this.player.x, this.player.y, 0xcdbb8d, pulse.radius);
-    this.shakeCamera(pulse.index === 0 ? 80 : 110, pulse.index === 0 ? 0.003 : 0.004);
-    this.audio.playSfx("bell_pulse");
-
-    for (const child of this.enemies.getChildren()) {
-      const enemy = child as EnemySprite;
-
-      if (!enemy.active) {
-        continue;
-      }
-
-      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
-
-      if (distance <= pulse.radius) {
-        this.damageEnemy(enemy, pulse.damage, {
-          important: enemy.isElite || pulse.index > 0,
-          color: 0xcdbb8d
-        });
-
-        if (enemy.active && synergyFlags.bellCandleBurn) {
-          this.applyTimedDamageEffect(enemy, "burn", getBellBurnTickDamage(pulse.damage));
-        }
-
-        if (enemy.active && distance > 0) {
-          const knockback = (pulse.index === 0 ? 42 : 58) * (1 - enemy.def.knockbackResistance);
-          enemy.x += ((enemy.x - this.player.x) / distance) * knockback;
-          enemy.y += ((enemy.y - this.player.y) / distance) * knockback;
-        }
-      }
-    }
-
-    if (synergyFlags.bellBonusCrow) {
-      this.releaseBonusCrowFromBell(synergyFlags);
-    }
-  }
-
-  private releaseCrowSwarm(stats: DerivedWeaponStats, synergyFlags: ActiveSynergyFlags): void {
-    for (let index = 0; index < stats.projectileCount; index += 1) {
-      const target = this.findRandomEnemy(stats.range);
-
-      if (!target) {
-        return;
-      }
-
-      this.fireCrowAt(target, stats, index, stats.projectileCount, synergyFlags);
-    }
-  }
-
-  private releaseBonusCrowFromBell(synergyFlags: ActiveSynergyFlags): void {
-    if (!this.run.upgrades.weapons.includes("crow_swarm")) {
-      return;
-    }
-
-    const stats = getDerivedWeaponStats(this.run.upgrades, "crow_swarm");
-    const target = this.findRandomEnemy(stats.range);
-
-    if (!target) {
-      return;
-    }
-
-    this.createBurst(this.player.x, this.player.y, 0x1f1b24, 4, 18, 140);
-    this.fireCrowAt(target, stats, 0, 1, synergyFlags);
-  }
-
-  private fireCrowAt(
-    target: EnemySprite,
-    stats: DerivedWeaponStats,
-    index: number,
-    total: number,
-    synergyFlags: ActiveSynergyFlags
-  ): void {
-    if (this.projectiles.countActive(true) >= HARD_PROJECTILE_CAP) {
-      return;
-    }
-
-    const projectile = this.projectiles.get(this.player.x, this.player.y, "crow") as ProjectileSprite | null;
-
-    if (!projectile) {
-      return;
-    }
-
-    const aim = Phaser.Math.Angle.Between(this.player.x, this.player.y, target.x, target.y);
-    const spread = total > 1 ? Phaser.Math.DegToRad((index - (total - 1) / 2) * 14) : 0;
-    const angle = aim + spread;
-
-    projectile.damage = Math.round(stats.damage);
-    projectile.range = stats.range * 1.7;
-    projectile.traveled = 0;
-    projectile.pierce = 0;
-    projectile.isCrit = false;
-    projectile.damageTextColor = 0xf3ead0;
-    projectile.appliesBurn = false;
-    projectile.appliesBleed = stats.bleed || synergyFlags.knivesBleedBonus;
-    projectile.bonusAgainstBleeding = false;
-    projectile.createsFlameBurst = synergyFlags.crowsFlameBurst;
-    projectile.hitEnemyIds = [];
-    projectile.kind = "crow";
-    projectile.targetEnemyId = target.runtimeId;
-    projectile.homingSpeed = 540;
-    projectile.homingRange = stats.range;
-    projectile.setTexture("crow");
-    projectile.setActive(true);
-    projectile.setVisible(true);
-    projectile.enableBody(true, this.player.x, this.player.y, true, true);
-    projectile.setDepth(19);
-    projectile.setRotation(angle);
-    projectile.setVelocity(Math.cos(angle) * projectile.homingSpeed, Math.sin(angle) * projectile.homingSpeed);
-    this.audio.playSfx("crow_attack");
-  }
-
-  private updateProjectiles(dt: number): void {
-    for (const child of this.projectiles.getChildren()) {
-      const projectile = child as ProjectileSprite;
-
-      if (!projectile.active) {
-        continue;
-      }
-
-      const body = projectile.body as Phaser.Physics.Arcade.Body;
-
-      if (projectile.kind === "crow") {
-        this.updateCrowProjectile(projectile);
-
-        if (!projectile.active) {
-          continue;
-        }
-      }
-
-      projectile.traveled += body.velocity.length() * dt;
-
-      if (projectile.traveled >= projectile.range) {
-        projectile.disableBody(true, true);
-        continue;
-      }
-
-      for (const enemyChild of this.enemies.getChildren()) {
-        const enemy = enemyChild as EnemySprite;
-
-        if (!enemy.active) {
-          continue;
-        }
-
-        if (projectile.hitEnemyIds.includes(enemy.runtimeId)) {
-          continue;
-        }
-
-        const hitDistance = enemy.def.radius + 8;
-        const distanceSq = Phaser.Math.Distance.Squared(projectile.x, projectile.y, enemy.x, enemy.y);
-
-        if (distanceSq <= hitDistance * hitDistance) {
-          projectile.hitEnemyIds.push(enemy.runtimeId);
-          const hitX = enemy.x;
-          const hitY = enemy.y;
-          const hitDamage =
-            projectile.bonusAgainstBleeding && enemy.bleedEffect
-              ? getBleedingTargetKnifeDamage(projectile.damage)
-              : projectile.damage;
-
-          this.damageEnemy(enemy, hitDamage, {
-            important: projectile.isCrit || enemy.isElite,
-            color: projectile.damageTextColor
-          });
-          if (enemy.active && projectile.appliesBurn) {
-            this.applyTimedDamageEffect(enemy, "burn", getKnifeBurnTickDamage(hitDamage));
-          }
-          if (enemy.active && projectile.appliesBleed) {
-            this.applyTimedDamageEffect(enemy, "bleed", getCrowBleedTickDamage(hitDamage));
-          }
-          if (projectile.createsFlameBurst) {
-            this.createCrowFlameBurst(hitX, hitY, hitDamage);
-          }
-          if (projectile.pierce > 0) {
-            projectile.pierce -= 1;
-            projectile.damage = Math.max(1, Math.round(projectile.damage * 0.5));
-            this.createBurst(projectile.x, projectile.y, 0x9aa8bd, 3, 14, 120);
-          } else {
-            projectile.disableBody(true, true);
-          }
-          break;
-        }
-      }
-    }
-  }
-
-  private createCrowFlameBurst(x: number, y: number, hitDamage: number): void {
-    const burst = getCrowFlameBurstSpec(hitDamage);
-    this.createDamageRadiusRing(x, y, 0xf7944d, burst.radius);
-    this.createBurst(x, y, 0xf7944d, 6, 28, 180);
-
-    for (const child of this.enemies.getChildren()) {
-      const enemy = child as EnemySprite;
-
-      if (!enemy.active) {
-        continue;
-      }
-
-      const distanceSq = Phaser.Math.Distance.Squared(x, y, enemy.x, enemy.y);
-
-      if (distanceSq <= burst.radius * burst.radius) {
-        this.damageEnemy(enemy, burst.damage, {
-          important: enemy.isElite,
-          color: 0xf7944d
-        });
-
-        if (enemy.active) {
-          this.applyTimedDamageEffect(enemy, "burn", burst.burnTickDamage);
-        }
-      }
-    }
-  }
-
-  private updateCrowProjectile(projectile: ProjectileSprite): void {
-    const targetId = selectHomingTarget(
-      projectile.targetEnemyId,
-      projectile.homingRange,
-      this.getHomingCandidates(projectile.x, projectile.y)
-    );
-    projectile.targetEnemyId = targetId;
-
-    if (targetId === null) {
-      projectile.disableBody(true, true);
-      return;
-    }
-
-    const target = this.findEnemyByRuntimeId(targetId);
-
-    if (!target) {
-      projectile.disableBody(true, true);
-      return;
-    }
-
-    const angle = Phaser.Math.Angle.Between(projectile.x, projectile.y, target.x, target.y);
-    projectile.setRotation(angle);
-    projectile.setVelocity(
-      Math.cos(angle) * projectile.homingSpeed,
-      Math.sin(angle) * projectile.homingSpeed
-    );
-  }
-
-  private getHomingCandidates(x: number, y: number): HomingTargetCandidate[] {
-    return getHomingCandidatesFromTargets(this.enemies.getChildren() as EnemySprite[], { x, y });
-  }
-
-  private findEnemyByRuntimeId(runtimeId: number): EnemySprite | null {
-    return findTargetByRuntimeId(this.enemies.getChildren() as EnemySprite[], runtimeId);
+  private getProjectileUpdateContext(): ProjectileUpdateContext {
+    return {
+      enemies: this.enemies,
+      projectiles: this.projectiles,
+      damageEnemy: (enemy, amount, feedback) => this.damageEnemy(enemy, amount, feedback),
+      applyTimedDamageEffect: (enemy, effectType, damagePerTick) =>
+        this.applyTimedDamageEffect(enemy, effectType, damagePerTick),
+      createBurst: (x, y, color, count, distance, duration) =>
+        this.createBurst(x, y, color, count, distance, duration),
+      createDamageRadiusRing: (x, y, color, radius) =>
+        this.createDamageRadiusRing(x, y, color, radius)
+    };
   }
 
   private damageEnemy(enemy: EnemySprite, amount: number, feedback: DamageFeedbackOptions = {}): void {
@@ -1555,95 +1134,45 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  private spawnPickup(type: PickupSprite["pickupType"], x: number, y: number, value: number): void {
+  private spawnPickup(type: PickupType, x: number, y: number, value: number): void {
     if (this.pickups.countActive(true) >= HARD_PICKUP_CAP) {
       if (this.mergePickupValue(type, x, y, value)) {
         return;
       }
     }
 
-    const pickup = this.pickups.get(x, y, type === "xp" ? "xp" : "bones") as PickupSprite | null;
-
-    if (!pickup) {
-      return;
-    }
-
-    pickup.pickupType = type;
-    pickup.value = value;
-    pickup.setActive(true);
-    pickup.setVisible(true);
-    pickup.enableBody(true, x, y, true, true);
-    pickup.setDepth(10);
-    pickup.setScale(0.65);
-    pickup.setVelocity(Phaser.Math.Between(-40, 40), Phaser.Math.Between(-40, 40));
-    pickup.setDrag(260);
-    this.tweens.add({
-      targets: pickup,
-      scale: 1,
-      duration: 180,
-      ease: "Back.easeOut"
-    });
-  }
-
-  private mergePickupValue(type: PickupSprite["pickupType"], x: number, y: number, value: number): boolean {
-    const activePickups = this.pickups
-      .getChildren()
-      .map((child, index) => ({ pickup: child as PickupSprite, id: String(index) }))
-      .filter(({ pickup }) => pickup.active);
-    const candidates: PickupMergeCandidate[] = activePickups.map(({ pickup, id }) => ({
-      id,
-      type: pickup.pickupType,
-      x: pickup.x,
-      y: pickup.y,
-      value: pickup.value
-    }));
-    const target = selectPickupMergeTarget({
+    spawnPickupEntity({
+      scene: this,
+      pickups: this.pickups,
       type,
       x,
       y,
-      candidates
+      value
     });
+  }
 
-    if (!target) {
-      return false;
-    }
-
-    const targetPickup = activePickups.find(({ id }) => id === target.id)?.pickup;
-
-    if (!targetPickup) {
-      return false;
-    }
-
-    targetPickup.value += value;
-    this.createBurst(targetPickup.x, targetPickup.y, type === "xp" ? 0x69d7ff : 0xe6d1a3, 3, 14, 120);
-
-    return true;
+  private mergePickupValue(type: PickupType, x: number, y: number, value: number): boolean {
+    return mergePickupEntityValue({
+      pickups: this.pickups,
+      type,
+      x,
+      y,
+      value,
+      onMerged: (pickup) => {
+        this.createBurst(pickup.x, pickup.y, getPickupFxColor(type), 3, 14, 120);
+      }
+    });
   }
 
   private updatePickups(dt: number): void {
-    for (const child of this.pickups.getChildren()) {
-      const pickup = child as PickupSprite;
-
-      if (!pickup.active) {
-        continue;
-      }
-
-      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, pickup.x, pickup.y);
-
-      if (distance <= this.run.upgrades.pickupRadius) {
-        const direction = new Phaser.Math.Vector2(this.player.x - pickup.x, this.player.y - pickup.y);
-
-        if (direction.lengthSq() > 0) {
-          direction.normalize();
-          pickup.x += direction.x * 320 * dt;
-          pickup.y += direction.y * 320 * dt;
-        }
-      }
-
-      if (distance <= PLAYER_RADIUS + 10) {
-        this.collectPickup(pickup);
-      }
-    }
+    updatePickupMovement({
+      pickups: this.pickups,
+      player: this.player,
+      pickupRadius: this.run.upgrades.pickupRadius,
+      collectRadius: PLAYER_RADIUS + 10,
+      dt,
+      onCollect: (pickup) => this.collectPickup(pickup)
+    });
   }
 
   private collectPickup(pickup: PickupSprite): void {
@@ -1651,7 +1180,7 @@ export class RunScene extends Phaser.Scene {
     this.createBurst(
       pickup.x,
       pickup.y,
-      pickup.pickupType === "xp" ? 0x69d7ff : 0xe6d1a3,
+      getPickupFxColor(pickup.pickupType),
       pickup.pickupType === "xp" ? 4 : 5,
       18,
       140
@@ -1666,43 +1195,6 @@ export class RunScene extends Phaser.Scene {
 
     this.run.bonesCollected += pickup.value;
     pickup.disableBody(true, true);
-  }
-
-  private calculateEnemySeparation(enemy: EnemySprite): Phaser.Math.Vector2 {
-    const separation = new Phaser.Math.Vector2(0, 0);
-    let neighbors = 0;
-
-    for (const child of this.enemies.getChildren()) {
-      const other = child as EnemySprite;
-
-      if (!other.active || other === enemy) {
-        continue;
-      }
-
-      const minDistance =
-        enemy.def.radius +
-        other.def.radius +
-        Math.max(getSeparationPadding(enemy.def.id), getSeparationPadding(other.def.id));
-      const offsetX = enemy.x - other.x;
-      const offsetY = enemy.y - other.y;
-      const distanceSq = offsetX * offsetX + offsetY * offsetY;
-
-      if (distanceSq <= 0 || distanceSq > minDistance * minDistance) {
-        continue;
-      }
-
-      const distance = Math.sqrt(distanceSq);
-      const force = (1 - distance / minDistance) * getSeparationWeight(enemy.def.id);
-      separation.x += (offsetX / distance) * force;
-      separation.y += (offsetY / distance) * force;
-      neighbors += 1;
-
-      if (neighbors >= ENEMY_SEPARATION_NEIGHBORS) {
-        break;
-      }
-    }
-
-    return separation;
   }
 
   private createBurst(
