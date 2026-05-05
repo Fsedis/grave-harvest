@@ -17,21 +17,11 @@ import {
   type ScriptedEnemySpawn
 } from "../domain/spawnDirector";
 import { hasWonNight } from "../domain/runRules";
-import {
-  purchaseMetaUpgrade,
-  type MetaUpgradeId
-} from "../domain/metaProgression";
+import type { MetaUpgradeId } from "../domain/metaProgression";
 import type { RunEndSummary } from "../domain/runSummary";
 import {
-  createDefaultSaveData,
-  loadSave,
-  markFirstRunHintsSeen,
-  persistSave,
-  resetSave,
-  updateSettings,
   type SaveData,
-  type SettingsData,
-  type StorageLike
+  type SettingsData
 } from "../domain/save";
 import {
   type BellPulseSpec
@@ -107,10 +97,25 @@ import {
   type PlayerWasdKeys
 } from "./player/playerRuntime";
 import {
-  createRunStats,
-  finalizeRunState,
+  completeRun,
+  createRunEndFlow,
+  createRunStartState,
   type RunStats
-} from "./run/runState";
+} from "./run/runLifecycle";
+import {
+  createBrowserSaveStore,
+  type GameSaveStore
+} from "./run/saveLifecycle";
+import {
+  applyMetaUpgradePurchase,
+  applySettingsPatch,
+  getSettingsCloseStatus
+} from "./run/settingsFlow";
+import type {
+  RunStatus,
+  SettingsReturnTarget
+} from "./run/runStatus";
+import { FirstRunHintController } from "./ui/firstRunHints";
 import { createGraveyardArena } from "./world/arena";
 import { createGameTextures } from "./world/textures";
 
@@ -119,24 +124,6 @@ const HARD_ENEMY_CAP = ENEMY_SPAWN_CAPS.hard;
 const HARD_PROJECTILE_CAP = 300;
 const HARD_PICKUP_CAP = 400;
 const ENEMY_SEPARATION_STRENGTH = 1.02;
-const FIRST_RUN_HINTS = [
-  "Двигайся WASD или стрелками. Остановиться на кладбище — плохая идея.",
-  "Атаки автоматические. Держи дистанцию и веди толпу за собой.",
-  "Собирай голубые души: они дают уровни и новые проклятия."
-];
-
-type RunStatus =
-  | "menu"
-  | "playing"
-  | "paused"
-  | "level_up"
-  | "game_over"
-  | "victory"
-  | "meta_upgrades"
-  | "settings"
-  | "reset_confirm";
-
-type SettingsReturnTarget = "menu" | "pause";
 
 type PendingBellPulse = {
   fireAt: number;
@@ -156,15 +143,15 @@ export class RunScene extends Phaser.Scene {
   private overlayObjects: Phaser.GameObjects.GameObject[] = [];
   private hud!: HudController;
   private damageNumberTexts: Phaser.GameObjects.Text[] = [];
-  private hintObjects: Phaser.GameObjects.GameObject[] = [];
-  private hintTimers: Phaser.Time.TimerEvent[] = [];
   private nextEnemyRuntimeId = 1;
   private pendingBellPulses: PendingBellPulse[] = [];
   private activeFinalBoss: EnemySprite | null = null;
-  private saveData: SaveData = createDefaultSaveData();
+  private saveStore!: GameSaveStore;
+  private saveData!: SaveData;
   private runEndSummary: RunEndSummary | null = null;
   private settingsReturnTarget: SettingsReturnTarget = "menu";
   private audio!: AudioManager;
+  private firstRunHints!: FirstRunHintController;
   private balanceDebugEnabled = false;
   private balanceDebugFps = 60;
   private playerKnockback: PlayerKnockbackState = createIdlePlayerKnockback();
@@ -173,43 +160,11 @@ export class RunScene extends Phaser.Scene {
     super("RunScene");
   }
 
-  private getStorage(): StorageLike | null {
-    if (typeof globalThis.localStorage === "undefined") {
-      return null;
-    }
-
-    return globalThis.localStorage;
-  }
-
-  private loadSaveData(): void {
-    const storage = this.getStorage();
-    this.saveData = storage ? loadSave(storage) : createDefaultSaveData();
-  }
-
-  private persistSaveData(): void {
-    const storage = this.getStorage();
-
-    if (!storage) {
-      return;
-    }
-
-    persistSave(storage, this.saveData);
-  }
-
-  private resetSaveData(): void {
-    const storage = this.getStorage();
-
-    if (storage) {
-      resetSave(storage);
-    }
-
-    this.saveData = createDefaultSaveData();
-    this.audio.updateSettings(this.saveData.settings);
-  }
-
   create(): void {
-    this.loadSaveData();
+    this.saveStore = createBrowserSaveStore();
+    this.saveData = this.saveStore.load();
     this.audio = new AudioManager(this.saveData.settings);
+    this.firstRunHints = new FirstRunHintController(this, () => this.status === "playing");
     this.balanceDebugEnabled = getBalanceDebugEnabled(getCurrentLocationSearch());
     createGameTextures(this);
     createGraveyardArena(this, MAP_SIZE);
@@ -311,20 +266,23 @@ export class RunScene extends Phaser.Scene {
     this.audio.updateSettings(this.saveData.settings);
     this.clearOverlay();
     this.clearEntities();
-    this.currentUpgradeOptions = [];
-    this.runEndSummary = null;
-    this.nextEnemyRuntimeId = 1;
-    this.run = createRunStats(this.saveData.meta);
-
-    this.activeFinalBoss = null;
+    const startState = createRunStartState(this.saveData);
+    this.currentUpgradeOptions = startState.currentUpgradeOptions;
+    this.runEndSummary = startState.runEndSummary;
+    this.nextEnemyRuntimeId = startState.nextEnemyRuntimeId;
+    this.run = startState.run;
+    this.activeFinalBoss = startState.activeFinalBoss;
     this.setLowHpWarningVisible(false);
     this.playerKnockback = resetPlayerForRun(this, this.player, MAP_SIZE);
     this.physics.resume();
-    this.status = "playing";
+    this.status = startState.status;
     this.setHudVisible(true);
     this.layoutHud();
     this.startRunAudio();
-    this.showFirstRunHintsIfNeeded();
+    this.saveData = this.firstRunHints.showIfNeeded(
+      this.saveData,
+      (saveData) => this.saveStore.persist(saveData)
+    );
   }
 
   private pauseRun(): void {
@@ -351,78 +309,6 @@ export class RunScene extends Phaser.Scene {
           this.audio.startRunMusic();
         }
       });
-  }
-
-  private showFirstRunHintsIfNeeded(): void {
-    if (this.saveData.tutorial.firstRunHintsSeen) {
-      return;
-    }
-
-    this.saveData = markFirstRunHintsSeen(this.saveData);
-    this.persistSaveData();
-
-    FIRST_RUN_HINTS.forEach((message, index) => {
-      const timer = this.time.delayedCall(850 + index * 4100, () => {
-        if (this.status === "playing") {
-          this.showGameplayHint(message);
-        }
-      });
-      this.hintTimers.push(timer);
-    });
-  }
-
-  private showGameplayHint(message: string): void {
-    this.clearHintObjects();
-
-    const { width, height } = this.scale;
-    const compact = width < 760;
-    const boxWidth = Math.min(width - 48, compact ? 430 : 560);
-    const boxHeight = compact ? 58 : 54;
-    const x = width / 2;
-    const y = height - (compact ? 104 : 96);
-    const back = this.add
-      .rectangle(x, y, boxWidth, boxHeight, 0x111612, 0.94)
-      .setStrokeStyle(1, 0xc9b46a, 0.8)
-      .setScrollFactor(0)
-      .setDepth(1500);
-    const text = this.add
-      .text(x, y, message, {
-        fontFamily: "Inter, Arial, sans-serif",
-        fontSize: compact ? "15px" : "17px",
-        fontStyle: "700",
-        color: "#f4ead7",
-        align: "center",
-        wordWrap: { width: boxWidth - 36 }
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(1501);
-
-    this.hintObjects.push(back, text);
-    this.tweens.add({
-      targets: this.hintObjects,
-      alpha: { from: 0, to: 1 },
-      y: y - 8,
-      duration: 180,
-      ease: "Quad.easeOut"
-    });
-
-    const hideTimer = this.time.delayedCall(3200, () => this.fadeOutHints());
-    this.hintTimers.push(hideTimer);
-  }
-
-  private fadeOutHints(): void {
-    if (this.hintObjects.length === 0) {
-      return;
-    }
-
-    this.tweens.add({
-      targets: this.hintObjects,
-      alpha: 0,
-      duration: 220,
-      ease: "Quad.easeOut",
-      onComplete: () => this.clearHintObjects()
-    });
   }
 
   private updatePlayerMovement(dt: number): void {
@@ -966,48 +852,49 @@ export class RunScene extends Phaser.Scene {
   }
 
   private endRun(): void {
-    this.status = "game_over";
-    this.playerKnockback = stopPlayer(this.player);
-    this.player.setTint(0x8a1d1d);
-    this.physics.pause();
-    this.audio.stopRunMusic();
-    this.audio.playSfx("death");
-    this.clearDamageNumbers();
-    this.clearHints();
-    this.setLowHpWarningVisible(false);
-    this.activeFinalBoss = null;
-    this.layoutHud();
-    this.finalizeRun(false);
-    this.showGameOverOverlay();
+    this.finishRun(false);
   }
 
   private winRun(): void {
-    this.status = "victory";
+    this.finishRun(true);
+  }
+
+  private finishRun(won: boolean): void {
+    const flow = createRunEndFlow(won);
+    this.status = flow.status;
     this.playerKnockback = stopPlayer(this.player);
+    if (flow.tintPlayerAsDead) {
+      this.player.setTint(0x8a1d1d);
+    }
     this.physics.pause();
     this.audio.stopRunMusic();
-    this.audio.playSfx("victory");
+    this.audio.playSfx(flow.sfx);
     this.clearDamageNumbers();
     this.clearHints();
     this.setLowHpWarningVisible(false);
     this.activeFinalBoss = null;
     this.layoutHud();
-    this.finalizeRun(true);
-    this.showVictoryOverlay();
+    this.finalizeRun(won);
+    if (flow.overlay === "victory") {
+      this.showVictoryOverlay();
+    } else {
+      this.showGameOverOverlay();
+    }
   }
 
   private finalizeRun(won: boolean): RunEndSummary {
-    const result = finalizeRunState({
+    const result = completeRun({
       run: this.run,
       saveData: this.saveData,
       won,
       existingSummary: this.runEndSummary
     });
+    this.status = result.status;
     this.saveData = result.saveData;
     this.runEndSummary = result.summary;
 
     if (result.changed) {
-      this.persistSaveData();
+      this.saveStore.persist(this.saveData);
     }
 
     return result.summary;
@@ -1115,11 +1002,11 @@ export class RunScene extends Phaser.Scene {
   }
 
   private buyMetaUpgrade(id: MetaUpgradeId): void {
-    const result = purchaseMetaUpgrade(this.saveData, id);
+    const result = applyMetaUpgradePurchase(this.saveData, id);
+    this.saveData = result.saveData;
 
-    if (result.purchased) {
-      this.saveData = result.save;
-      this.persistSaveData();
+    if (result.shouldPersist) {
+      this.saveStore.persist(this.saveData);
     }
 
     this.showMetaUpgradesOverlay();
@@ -1142,12 +1029,12 @@ export class RunScene extends Phaser.Scene {
   }
 
   private updateGameSettings(patch: Partial<SettingsData>): void {
-    const hadDamageNumbers = this.saveData.settings.damageNumbers;
-    this.saveData = updateSettings(this.saveData, patch);
+    const result = applySettingsPatch(this.saveData, patch);
+    this.saveData = result.saveData;
     this.audio.updateSettings(this.saveData.settings);
-    this.persistSaveData();
+    this.saveStore.persist(this.saveData);
 
-    if (hadDamageNumbers && !this.saveData.settings.damageNumbers) {
+    if (result.shouldClearDamageNumbers) {
       this.clearDamageNumbers();
     }
 
@@ -1155,8 +1042,10 @@ export class RunScene extends Phaser.Scene {
   }
 
   private closeSettingsOverlay(): void {
-    if (this.settingsReturnTarget === "pause") {
-      this.status = "paused";
+    const status = getSettingsCloseStatus(this.settingsReturnTarget);
+
+    if (status === "paused") {
+      this.status = status;
       this.setHudVisible(true);
       this.showPauseOverlay();
       return;
@@ -1174,7 +1063,8 @@ export class RunScene extends Phaser.Scene {
       scene: this,
       overlayObjects: this.overlayObjects,
       onConfirm: () => {
-        this.resetSaveData();
+        this.saveData = this.saveStore.reset();
+        this.audio.updateSettings(this.saveData.settings);
         this.showMainMenu();
       },
       onBack: () => this.showMainMenu()
@@ -1195,17 +1085,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   private clearHints(): void {
-    this.hintTimers.forEach((timer) => timer.remove(false));
-    this.hintTimers = [];
-    this.clearHintObjects();
-  }
-
-  private clearHintObjects(): void {
-    this.hintObjects.forEach((object) => {
-      this.tweens.killTweensOf(object);
-      object.destroy();
-    });
-    this.hintObjects = [];
+    this.firstRunHints.clear();
   }
 
   private setHudVisible(visible: boolean): void {
